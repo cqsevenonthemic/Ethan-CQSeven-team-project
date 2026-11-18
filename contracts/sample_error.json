@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "VISION_NOT_IMPLEMENTED",
+    "message": "ONNX recognition is not implemented yet"
+  }
+}

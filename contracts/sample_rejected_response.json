@@ -1,0 +1,90 @@
+{
+  "action": "forward",
+  "carry_slot": "s1",
+  "slots": {
+    "s1": {
+      "x": 7,
+      "z": 7,
+      "pred_role": "quyuan",
+      "verified": true,
+      "state": "carried",
+      "recognition_id": null,
+      "recognition_source": null
+    },
+    "s2": {
+      "x": 3,
+      "z": 4,
+      "pred_role": "zhaojun",
+      "verified": false,
+      "state": "waiting",
+      "recognition_id": null,
+      "recognition_source": null
+    }
+  },
+  "plan_path": [
+    [
+      7,
+      7
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      7,
+      8
+    ],
+    [
+      8,
+      8
+    ]
+  ],
+  "decision": {
+    "switched": false,
+    "reason": "Rejected identity corrected under the two-figure task constraint; Shortest unit-cost route on confirmed open edges",
+    "cost_keep": null,
+    "cost_switch": null,
+    "cost_scope": "not_evaluated"
+  },
+  "done": false,
+  "status": "planning",
+  "remaining_tasks": 2,
+  "trajectory": {
+    "poses": [
+      {
+        "x": 7,
+        "z": 7,
+        "theta": 0
+      },
+      {
+        "x": 7,
+        "z": 8,
+        "theta": 0
+      },
+      {
+        "x": 7,
+        "z": 8,
+        "theta": 90
+      },
+      {
+        "x": 8,
+        "z": 8,
+        "theta": 90
+      }
+    ],
+    "actions": [
+      "forward",
+      "turn_right",
+      "forward"
+    ],
+    "steps": 3
+  },
+  "observation_seq": 0,
+  "progress": {
+    "fingerprint": "1125eb00b9383509b77861a4ce9932af2a21c82d2923d12eaa7e5b64c74b38ad",
+    "last_observation_seq": 0,
+    "last_step_count": 0,
+    "scan_attempts": 0,
+    "pending_scan": false
+  }
+}
