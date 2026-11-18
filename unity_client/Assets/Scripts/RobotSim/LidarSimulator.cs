@@ -7,6 +7,7 @@ namespace Ethan.CQSeven.RobotSim
     {
         public float RelativeAngleDegrees { get; private set; }
         public bool HasHit { get; private set; }
+        /// <summary>Zero means an occluding hit was inside the blind zone and has no reportable range.</summary>
         public float Distance { get; private set; }
         public Vector3 HitPoint { get; private set; }
 
@@ -68,6 +69,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private LineRenderer[] _rayLines;
         private GameObject[] _hitMarkers;
+        private Transform _visualRoot;
         private Material _rayMaterial;
         private Material _hitMaterial;
         private LidarScan _lastScan;
@@ -110,6 +112,14 @@ namespace Ethan.CQSeven.RobotSim
             _subscribed = false;
         }
 
+        private void OnDestroy()
+        {
+            if (_visualRoot != null)
+                DestroyRuntimeObject(_visualRoot.gameObject);
+            DestroyRuntimeMaterial(_rayMaterial);
+            DestroyRuntimeMaterial(_hitMaterial);
+        }
+
         private void Update()
         {
             _scanTimer += Time.deltaTime;
@@ -140,17 +150,21 @@ namespace Ethan.CQSeven.RobotSim
                 RaycastHit hit;
                 var hasPhysicsHit = Physics.Raycast(rayOrigin, direction, out hit, maximumRange,
                     obstacleLayers, QueryTriggerInteraction.Ignore);
-                var usableHit = hasPhysicsHit && hit.distance >= minimumRange;
-                var distance = usableHit ? Mathf.Clamp(hit.distance, minimumRange, maximumRange) : maximumRange;
-                var hitPoint = usableHit ? hit.point : rayOrigin + direction * distance;
+                var hasReportableHit = hasPhysicsHit && hit.distance >= minimumRange;
+                var traceDistance = hasPhysicsHit ? hit.distance : maximumRange;
+                var physicalHitPoint = hasPhysicsHit ? hit.point : rayOrigin + direction * maximumRange;
+                var reportDistance = hasReportableHit ? Mathf.Clamp(hit.distance, minimumRange, maximumRange) :
+                    (hasPhysicsHit ? 0f : maximumRange);
 
+                // Blind-zone hits still occlude the ray and map trace, but their point is not reported or marked.
                 _rayLines[i].SetPosition(0, rayOrigin);
-                _rayLines[i].SetPosition(1, hitPoint);
+                _rayLines[i].SetPosition(1, physicalHitPoint);
                 _rayLines[i].enabled = true;
-                UpdateHitMarker(i, usableHit, hitPoint);
-                samples[i] = new LidarRaySample(angle, usableHit, distance, usableHit ? hit.point : Vector3.zero);
+                UpdateHitMarker(i, hasReportableHit, physicalHitPoint);
+                samples[i] = new LidarRaySample(angle, hasReportableHit, reportDistance,
+                    hasReportableHit ? physicalHitPoint : Vector3.zero);
 
-                TraceObservedEdges(map, rayOrigin, direction, distance, usableHit, hitPoint);
+                TraceObservedEdges(map, rayOrigin, direction, traceDistance, hasPhysicsHit, physicalHitPoint);
             }
 
             _lastScan = new LidarScan(samples, FanDegrees, minimumRange, maximumRange);
@@ -159,7 +173,7 @@ namespace Ethan.CQSeven.RobotSim
         }
 
         private void TraceObservedEdges(MazeBuilder map, Vector3 origin, Vector3 direction,
-            float measuredDistance, bool hitWall, Vector3 hitPoint)
+            float measuredDistance, bool hasPhysicalHit, Vector3 hitPoint)
         {
             Vector2Int cell;
             if (!map.TryWorldToCell(origin, out cell))
@@ -188,7 +202,7 @@ namespace Ethan.CQSeven.RobotSim
                     (stepZ > 0 ? WallDirection.North : WallDirection.South);
                 var edgePlane = crossesX ? (stepX > 0 ? cell.x + 1f : cell.x) :
                     (stepZ > 0 ? cell.y + 1f : cell.y);
-                var hitOnThisPlane = hitWall && (crossesX
+                var hitOnThisPlane = hasPhysicalHit && (crossesX
                     ? Mathf.Abs(hitPoint.x - edgePlane) <= edgeHitTolerance
                     : Mathf.Abs(hitPoint.z - edgePlane) <= edgeHitTolerance);
 
@@ -220,6 +234,8 @@ namespace Ethan.CQSeven.RobotSim
 
         private void CreateVisualPools()
         {
+            _visualRoot = new GameObject("LidarVisuals").transform;
+            _visualRoot.SetParent(transform, false);
             var boundedCount = Mathf.Clamp(rayCount, 3, MaximumRayCount);
             _rayLines = new LineRenderer[boundedCount];
             _hitMarkers = new GameObject[boundedCount];
@@ -229,7 +245,7 @@ namespace Ethan.CQSeven.RobotSim
             for (var i = 0; i < boundedCount; i++)
             {
                 var rayObject = new GameObject("LidarRay_" + i);
-                rayObject.transform.SetParent(transform, false);
+                rayObject.transform.SetParent(_visualRoot, false);
                 var line = rayObject.AddComponent<LineRenderer>();
                 line.useWorldSpace = true;
                 line.positionCount = 2;
@@ -243,7 +259,7 @@ namespace Ethan.CQSeven.RobotSim
 
                 var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 marker.name = "LidarHit_" + i;
-                marker.transform.SetParent(transform, false);
+                marker.transform.SetParent(_visualRoot, false);
                 marker.transform.localScale = Vector3.one * hitMarkerSize;
                 marker.GetComponent<Renderer>().sharedMaterial = _hitMaterial;
                 var collider = marker.GetComponent<Collider>();
@@ -281,6 +297,26 @@ namespace Ethan.CQSeven.RobotSim
         private void OnRobotActionCompleted(RobotActionResult result)
         {
             Scan();
+        }
+
+        private void DestroyRuntimeMaterial(Material material)
+        {
+            if (material == null)
+                return;
+            if (Application.isPlaying)
+                Destroy(material);
+            else
+                DestroyImmediate(material);
+        }
+
+        private static void DestroyRuntimeObject(GameObject instance)
+        {
+            if (instance == null)
+                return;
+            if (Application.isPlaying)
+                Destroy(instance);
+            else
+                DestroyImmediate(instance);
         }
 
         private static Material CreateMaterial(string materialName, Color color, bool transparent)

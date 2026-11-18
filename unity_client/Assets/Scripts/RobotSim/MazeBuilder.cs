@@ -173,6 +173,17 @@ namespace Ethan.CQSeven.RobotSim
                 masks[cell.y, cell.x] &= (byte)~direction;
         }
 
+        private void OnDestroy()
+        {
+            if (_geometryRoot != null)
+                DestroyRuntimeObject(_geometryRoot.gameObject);
+            DestroyRuntimeMaterial(_wallMaterial);
+            DestroyRuntimeMaterial(_unexploredMaterial);
+            DestroyRuntimeMaterial(_exploredMaterial);
+            DestroyRuntimeMaterial(_destinationMaterial);
+            DestroyRuntimeMaterial(_secondDestinationMaterial);
+        }
+
         private void BuildMap()
         {
             if (_built)
@@ -272,6 +283,26 @@ namespace Ethan.CQSeven.RobotSim
                 shader = Shader.Find("Unlit/Color");
             var material = new Material(shader) { name = materialName, color = color };
             return material;
+        }
+
+        private void DestroyRuntimeMaterial(Material material)
+        {
+            if (material == null)
+                return;
+            if (Application.isPlaying)
+                Destroy(material);
+            else
+                DestroyImmediate(material);
+        }
+
+        private static void DestroyRuntimeObject(GameObject instance)
+        {
+            if (instance == null)
+                return;
+            if (Application.isPlaying)
+                Destroy(instance);
+            else
+                DestroyImmediate(instance);
         }
 
         private bool ValidateFixedLayout()
