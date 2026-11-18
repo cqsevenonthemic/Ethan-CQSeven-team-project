@@ -70,7 +70,7 @@ namespace Ethan.CQSeven.RobotSim
         /// <summary>
         /// Unity simulation-only truth query. Keep this data inside Unity; never place it in network DTOs.
         /// </summary>
-        public bool TryGetActualWalls(Vector2Int cell, out byte wallMask)
+        private bool TryGetActualWalls(Vector2Int cell, out byte wallMask)
         {
             if (!IsInBounds(cell))
             {
@@ -82,7 +82,7 @@ namespace Ethan.CQSeven.RobotSim
             return true;
         }
 
-        public bool IsPassageOpen(Vector2Int cell, RobotHeading heading)
+        internal bool IsPassageOpen(Vector2Int cell, RobotHeading heading)
         {
             var wall = WallDirection.FromHeading(heading);
             int dx;
