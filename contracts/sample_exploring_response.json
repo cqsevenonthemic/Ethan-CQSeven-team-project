@@ -1,0 +1,51 @@
+{
+  "action": "turn_right",
+  "carry_slot": null,
+  "slots": {},
+  "plan_path": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      0
+    ]
+  ],
+  "decision": {
+    "switched": false,
+    "reason": "No task switch required; Observe an unknown edge reachable through confirmed open edges",
+    "cost_keep": null,
+    "cost_switch": null,
+    "cost_scope": "not_evaluated"
+  },
+  "done": false,
+  "status": "exploring",
+  "remaining_tasks": 2,
+  "trajectory": {
+    "poses": [
+      {
+        "x": 0,
+        "z": 0,
+        "theta": 0
+      },
+      {
+        "x": 0,
+        "z": 0,
+        "theta": 90
+      }
+    ],
+    "actions": [
+      "turn_right"
+    ],
+    "steps": 1
+  },
+  "observation_seq": 0,
+  "progress": {
+    "fingerprint": "6f063f92bff52c882cf65b832f4e1ec41f3a5ae835dc5bea0f2b0c498520fee3",
+    "last_observation_seq": 0,
+    "last_step_count": 0,
+    "scan_attempts": 0,
+    "pending_scan": true
+  }
+}

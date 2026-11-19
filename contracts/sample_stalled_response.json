@@ -1,0 +1,40 @@
+{
+  "action": null,
+  "carry_slot": null,
+  "slots": {},
+  "plan_path": [
+    [
+      0,
+      0
+    ]
+  ],
+  "decision": {
+    "switched": false,
+    "reason": "No task switch required; Four scan rotations made no information progress; recover the sensor before resuming",
+    "cost_keep": null,
+    "cost_switch": null,
+    "cost_scope": "not_evaluated"
+  },
+  "done": false,
+  "status": "awaiting_observation",
+  "remaining_tasks": 2,
+  "trajectory": {
+    "poses": [
+      {
+        "x": 0,
+        "z": 0,
+        "theta": 0
+      }
+    ],
+    "actions": [],
+    "steps": 0
+  },
+  "observation_seq": 4,
+  "progress": {
+    "fingerprint": "6f063f92bff52c882cf65b832f4e1ec41f3a5ae835dc5bea0f2b0c498520fee3",
+    "last_observation_seq": 4,
+    "last_step_count": 4,
+    "scan_attempts": 4,
+    "pending_scan": false
+  }
+}

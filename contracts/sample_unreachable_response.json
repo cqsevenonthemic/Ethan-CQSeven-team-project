@@ -1,0 +1,59 @@
+{
+  "action": null,
+  "carry_slot": "s1",
+  "slots": {
+    "s1": {
+      "x": 7,
+      "z": 6,
+      "pred_role": "zhaojun",
+      "verified": false,
+      "state": "carried",
+      "recognition_id": null,
+      "recognition_source": null
+    },
+    "s2": {
+      "x": 8,
+      "z": 8,
+      "pred_role": "quyuan",
+      "verified": true,
+      "state": "delivered",
+      "recognition_id": null,
+      "recognition_source": null
+    }
+  },
+  "plan_path": [
+    [
+      7,
+      6
+    ]
+  ],
+  "decision": {
+    "switched": false,
+    "reason": "No task switch required; Reachable component searched; no remaining target route or observation frontier",
+    "cost_keep": null,
+    "cost_switch": null,
+    "cost_scope": "not_evaluated"
+  },
+  "done": false,
+  "status": "unreachable",
+  "remaining_tasks": 1,
+  "trajectory": {
+    "poses": [
+      {
+        "x": 7,
+        "z": 6,
+        "theta": 0
+      }
+    ],
+    "actions": [],
+    "steps": 0
+  },
+  "observation_seq": 0,
+  "progress": {
+    "fingerprint": "38a69f298676cc080c1df362c94ca664d8dee3cae580af7e07d056cd0ca34edd",
+    "last_observation_seq": 0,
+    "last_step_count": 0,
+    "scan_attempts": 0,
+    "pending_scan": false
+  }
+}
