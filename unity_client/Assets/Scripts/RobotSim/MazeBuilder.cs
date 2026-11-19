@@ -165,6 +165,17 @@ namespace Ethan.CQSeven.RobotSim
             return IsInBounds(cell) && _visited[cell.y, cell.x];
         }
 
+        /// <summary>Returns cells the robot actually entered, sorted by x then z for stable API snapshots.</summary>
+        public Vector2Int[] CopyVisitedCells()
+        {
+            var cells = new List<Vector2Int>(Width * Height);
+            for (var x = 0; x < Width; x++)
+            for (var z = 0; z < Height; z++)
+                if (_visited[z, x])
+                    cells.Add(new Vector2Int(x, z));
+            return cells.ToArray();
+        }
+
         private static void ApplyObservedMask(byte[,] masks, Vector2Int cell, byte direction, bool set)
         {
             if (set)

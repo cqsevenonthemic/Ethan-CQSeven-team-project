@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Ethan.CQSeven.RobotSim
@@ -29,6 +30,8 @@ namespace Ethan.CQSeven.RobotSim
         private int _forwardStepCount;
         private int _leftTurnStepCount;
         private int _rightTurnStepCount;
+        private readonly List<RobotPose> _executedPoses = new List<RobotPose>();
+        private readonly List<RobotAction> _executedActions = new List<RobotAction>();
 
         public event Action<RobotAction> ActionStarted;
         public event Action<RobotActionResult> ActionCompleted;
@@ -45,6 +48,10 @@ namespace Ethan.CQSeven.RobotSim
         public int RightTurnStepCount { get { return _rightTurnStepCount; } }
         public float SpeedMultiplier { get { return speedMultiplier; } }
         public float CurrentActionDurationSeconds { get { return _actionDurationSeconds; } }
+        public int ExecutedActionCount { get { return _executedActions.Count; } }
+
+        public RobotPose[] CopyExecutedPoses() { return _executedPoses.ToArray(); }
+        public RobotAction[] CopyExecutedActions() { return _executedActions.ToArray(); }
 
         private void Awake()
         {
@@ -91,6 +98,13 @@ namespace Ethan.CQSeven.RobotSim
 
             maze = map;
             _pose = pose;
+            _executedPoses.Clear();
+            _executedActions.Clear();
+            _totalStepCount = 0;
+            _forwardStepCount = 0;
+            _leftTurnStepCount = 0;
+            _rightTurnStepCount = 0;
+            _executedPoses.Add(pose);
             transform.position = center;
             transform.rotation = Quaternion.Euler(0f, pose.HeadingDegrees, 0f);
             maze.MarkVisited(pose.Cell);
@@ -128,6 +142,7 @@ namespace Ethan.CQSeven.RobotSim
             {
                 _isAnimating = false;
                 _actionDurationSeconds = 0f;
+                RecordCompletedAction(action, startPose);
                 ForwardBlocked?.Invoke(startPose);
                 ActionCompleted?.Invoke(new RobotActionResult(action, startPose, startPose,
                     false, true, 0f));
@@ -156,6 +171,7 @@ namespace Ethan.CQSeven.RobotSim
             var completedAction = _activeAction;
             var startPose = _actionStartPose;
             _pose = _actionEndPose;
+            RecordCompletedAction(completedAction, _pose);
             transform.position = _targetPosition;
             transform.rotation = Quaternion.Euler(0f, _pose.HeadingDegrees, 0f);
             _isAnimating = false;
@@ -175,6 +191,12 @@ namespace Ethan.CQSeven.RobotSim
                 case RobotAction.TurnLeft: _leftTurnStepCount++; break;
                 case RobotAction.TurnRight: _rightTurnStepCount++; break;
             }
+        }
+
+        private void RecordCompletedAction(RobotAction action, RobotPose endPose)
+        {
+            _executedActions.Add(action);
+            _executedPoses.Add(endPose);
         }
 
         private static RobotPose CalculateEndPose(RobotPose pose, RobotAction action)
