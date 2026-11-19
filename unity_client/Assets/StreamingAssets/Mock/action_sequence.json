@@ -1,0 +1,297 @@
+{
+  "fixture_only": true,
+  "finish_when_actions_end": true,
+  "actions": [
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward"
+  ],
+  "checkpoints": [
+    {
+      "action_index": 0,
+      "carry_slot": null,
+      "slots": {},
+      "plan_path": [
+        [
+          0,
+          0
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    {
+      "action_index": 2,
+      "carry_slot": "s1",
+      "slots": {
+        "s1": {
+          "x": 1,
+          "z": 0,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "carried"
+        }
+      },
+      "plan_path": [
+        [
+          1,
+          0
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "action_index": 4,
+      "carry_slot": "s2",
+      "slots": {
+        "s1": {
+          "x": 2,
+          "z": 0,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "waiting"
+        },
+        "s2": {
+          "x": 2,
+          "z": 0,
+          "pred_role": "zhaojun",
+          "verified": false,
+          "state": "carried"
+        }
+      },
+      "plan_path": [
+        [
+          2,
+          0
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "decision": {
+        "switched": true,
+        "cost_keep": 132,
+        "cost_switch": 126,
+        "reason": "Mock fixture: switch at (2,0), deliver s2, then return for s1."
+      }
+    },
+    {
+      "action_index": 46,
+      "carry_slot": null,
+      "slots": {
+        "s1": {
+          "x": 2,
+          "z": 0,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "waiting"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          7,
+          7
+        ],
+        [
+          2,
+          0
+        ]
+      ]
+    },
+    {
+      "action_index": 90,
+      "carry_slot": "s1",
+      "slots": {
+        "s1": {
+          "x": 2,
+          "z": 0,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "carried"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          2,
+          0
+        ],
+        [
+          8,
+          8
+        ]
+      ]
+    },
+    {
+      "action_index": 129,
+      "carry_slot": null,
+      "slots": {
+        "s1": {
+          "x": 8,
+          "z": 8,
+          "pred_role": "quyuan",
+          "verified": true,
+          "state": "delivered"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          8,
+          8
+        ]
+      ]
+    }
+  ]
+}

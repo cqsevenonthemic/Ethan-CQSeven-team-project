@@ -1,0 +1,17 @@
+{
+  "action": "turn_right",
+  "carry_slot": null,
+  "slots": {},
+  "plan_path": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "decision": null,
+  "done": false
+}
