@@ -16,7 +16,7 @@ testpaths = ["planner_service/tests"]
 pythonpath = ["."]
 
 [tool.setuptools]
-packages = ["planner_service", "planner_service.planner", "planner_service.simulation"]
+packages = ["planner_service", "planner_service.planner", "planner_service.simulation", "planner_service.vision"]
 package-dir = {planner_service = "."}
 
 [build-system]

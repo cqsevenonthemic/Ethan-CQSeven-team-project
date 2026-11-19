@@ -14,6 +14,7 @@ from planner_service.service import FeatureUnavailable, decide
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Micromouse Planner", version="0.2.0")
+_recognizer = None
 
 
 def error(status: int, code: str, message: str) -> JSONResponse:
@@ -55,7 +56,23 @@ def next_action(body: ObserveRequest):
 
 @app.post("/recognize", responses={422: {"model": ErrorResponse}, 501: {"model": ErrorResponse}})
 def recognize(body: RecognizeRequest):
-    raise FeatureUnavailable("VISION_NOT_IMPLEMENTED", "ONNX recognition is not implemented yet")
+    """Run the configured trained model; keep the P0-safe response if absent."""
+    global _recognizer
+    try:
+        from planner_service.vision.inference import ModelUnavailable, VisionRecognizer
+        if _recognizer is None:
+            _recognizer = VisionRecognizer()
+        result = _recognizer.predict_base64(body.image_base64)
+    except ModelUnavailable:
+        # A model must never be implied by a mock, filename, coordinate or state.
+        raise FeatureUnavailable("VISION_NOT_IMPLEMENTED", "ONNX recognition is not implemented yet")
+    except ValueError as exc:
+        raise FeatureUnavailable("VISION_INVALID_IMAGE", str(exc))
+    except Exception:
+        logger.error("Vision inference failed", exc_info=True)
+        raise FeatureUnavailable("VISION_INFERENCE_FAILED", "Image recognition failed")
+    result["status"] = "low_confidence" if result["confidence"] < 0.60 else "recognized"
+    return result
 
 
 @app.post("/plan_summary", responses={422: {"model": ErrorResponse}, 501: {"model": ErrorResponse}})
