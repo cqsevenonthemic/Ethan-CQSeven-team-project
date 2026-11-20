@@ -125,6 +125,12 @@ namespace Ethan.CQSeven.RobotSim
                 var station = _stations[i];
                 if (!station.IsDiscovered || !station.IsRecognized || string.IsNullOrEmpty(station.PredictedRole))
                     continue;
+
+                if (station.SlotId == CarrySlot && station.State == "carried")
+                {
+                    station.Cell = pose.Cell;
+                }
+
                 request.slots[station.SlotId] = new SlotDto
                 {
                     x = station.Cell.x,
@@ -401,6 +407,14 @@ namespace Ethan.CQSeven.RobotSim
             if (!_isReady || IsReplayMode)
                 return;
 
+            if (!string.IsNullOrEmpty(CarrySlot))
+            {
+                var carried = FindStation(CarrySlot);
+                if (carried != null && carried.State == "carried")
+                {
+                    carried.Cell = pose.Cell;
+                }
+            }
 
             if (_rejectedCellUntilLeave.HasValue && pose.Cell != _rejectedCellUntilLeave.Value)
                 _rejectedCellUntilLeave = null;
