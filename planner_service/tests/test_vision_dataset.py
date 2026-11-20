@@ -39,4 +39,3 @@ def test_inference_refuses_missing_model_without_a_test_substitute(monkeypatch):
     except ModelUnavailable:
         return
     raise AssertionError("inference must not proceed without a trained model")
-

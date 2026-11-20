@@ -204,4 +204,3 @@ if __name__ == "__main__":
                                   args.batch_size, args.learning_rate, args.patience,
                                   args.architecture, not args.no_pretrained, args.freeze_epochs,
                                   args.defer_test, args.pilot), indent=2))
-

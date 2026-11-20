@@ -53,4 +53,3 @@ def set_mobilenet_training_mode(model) -> None:
     for block in model.features:
         if not any(parameter.requires_grad for parameter in block.parameters()):
             block.eval()
-

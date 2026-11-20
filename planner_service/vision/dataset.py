@@ -170,4 +170,3 @@ def write_manifest(path: Path, records: Iterable[ImageRecord], *, overwrite: boo
 
 def scan_images(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES)
-

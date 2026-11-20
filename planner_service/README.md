@@ -4,7 +4,7 @@ P0（服务0.2.0）：FastAPI 无状态服务、严格快照校验、带朝向 A
 双人物单容量调度、拒收纠偏、扫描停滞等待，以及真实执行 JSONL 回放和批量测试。
 服务不读取 Unity 的 `eval.json`，不持有跨请求机器人或人物状态。
 接口基线见 `../codex.md` 第六节和 [api_v1.md](../contracts/api_v1.md)。
-共享契约中的 501 说明记录 P0 状态，P2 的实际行为见下文和运行服务的 `/openapi.json`。
+共享契约中的 501 说明记录 P0 状态，P1/P2 联合接口行为见下文和运行服务的 `/openapi.json`。
 
 ## 环境与安装
 
@@ -27,8 +27,17 @@ py -3.12 -m venv .venv
 `pyproject.toml` 声明兼容范围，`requirements-runtime.lock` / `requirements-dev.lock`
 记录本次 Windows/Python 3.12 实测的精确运行/开发依赖（开发锁已包含运行依赖）。
 它们不是带哈希的跨平台锁；其他平台须重新验证。源码安装的 setuptools 构建环境由 pip 隔离创建。
-仅运行时可把上述 dev 锁换为 runtime 锁。服务不需要 PyTorch、ONNX Runtime 或 ROS；
-真实识别接入时再添加推理依赖，离线训练使用另一个环境。
+仅运行时可把上述 dev 锁换为 runtime 锁。规划只使用基础依赖，带实际权重的识别服务
+使用 `vision` 依赖。离线训练继续使用 P1 的独立 CUDA 环境。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r planner_service/requirements-runtime.lock -e './planner_service[vision]'
+.\.venv\Scripts\python.exe -m pip check
+```
+
+验收环境使用 Python 3.12、FastAPI 0.163.2、Pydantic 2.14.3、Pillow 11.1.0、
+NumPy 2.2.3 和 ONNX Runtime 1.20.1。部署环境只安装 ONNX 推理依赖。
+下方无头 HTTP 工具使用 `httpx`，可通过 `requirements-dev.lock` 安装。
 
 ## 启动
 
@@ -189,12 +198,56 @@ $plan.optimal_steps
 
 ## 人物识别验收
 
-P2 复用 P1 的输入预处理、角色标签和 ONNX 推理。没有配置训练权重时，
-`/recognize` 按现有样例返回 501 `VISION_NOT_IMPLEMENTED`。工程冒烟使用合成图和
-图像相关的 ONNX 测试图验证会话、解码和 JSON；真实人物分类验收等待正式训练模型。
-届时安装可选依赖 `pip install -e './planner_service[vision]'`，设置 `PLANNER_ONNX_MODEL`
-为正式权重路径，再设置 `PLANNER_VISION_ACCEPTANCE_MANIFEST` 为留出集 JSON 清单路径。
-清单是含 `path`、`label` 的对象数组，图像路径相对清单目录，覆盖屈原和昭君。
+集成服务用 P1 实际训练的 MobileNetV3-Small `classifier.onnx`。模型输入为
+`float32[1,3,224,224]`。预处理将 PNG／JPEG 转为 RGB，双线性缩放至 224×224，
+归一化到 0–1 后应用 ImageNet 均值和标准差，并转为 NCHW。
+输出为 `float32[1,2]` logits，角色顺序为 `quyuan`、`zhaojun`，接口返回 softmax 后的最大项。
+
+`POST /recognize` 请求为 `{"image_base64":"…"}`，发送原始标准 Base64，支持
+PNG／JPEG，解码后最多 4 MiB。成功响应示例为
+`{"pred_role":"quyuan","confidence":0.9788872003555298}`，服务还返回
+`recognition_id`、`recognition_source`、`image_sha256` 和 `status`。
+缺少可用权重时返回 501 `VISION_NOT_IMPLEMENTED`，坏模型返回 501
+`VISION_INFERENCE_FAILED`，非法图片返回 422 `INVALID_INPUT`。
+
+首批独立国风插画测试为 16/16。四张其他古装人物插画均被判入这两类之一，
+置信度为 80.5%–99.9%。正式外部验收还需独立来源和实际 Unity 图像。
+采用现有的二分类字段，客户端应把分数理解为两类之间的置信度。
+
+### 模型交付和校验
+
+将 `classifier.onnx` 和 `classifier.onnx.sha256` 一起通过团队文件交付渠道传递，
+在接收机器上放到仓库之外，并把 `$model` 改为实际绝对路径。当前留出集使用的模型
+SHA-256 为 `46f1b651c1949ce0fd82a3a08ad50de6671d24a18a2768f052ee573e26f6113e`。
+在启动服务的同一 PowerShell 里设置环境变量，切换权重时重启服务。
+
+```powershell
+$dataset = (Resolve-Path '..\P1-real-data\pilot-illustrations-v1').Path
+$model = Join-Path $dataset 'runs\mobilenet-v3-small-v1\classifier.onnx'
+$expectedHash = '46f1b651c1949ce0fd82a3a08ad50de6671d24a18a2768f052ee573e26f6113e'
+if ((Get-FileHash -LiteralPath $model -Algorithm SHA256).Hash -ne $expectedHash) {
+    throw 'Unexpected classifier.onnx digest'
+}
+$env:PLANNER_ONNX_MODEL = $model
+.\.venv\Scripts\python.exe -m uvicorn planner_service.app:app --host 127.0.0.1 --port 8000
+```
+
+### 无头联合验收和 HTTP 样例
+
+用开发依赖启动已配置真实权重的服务后，从另一个终端执行以下命令。
+种子 74 在两次交付前先发现两名人物。模拟器仅在踩到人物格时上传该人物的留出图，
+并把 HTTP 识别预测用于后续规划。配送完成后用执行日志里的观测图和最初发现坐标请求汇总。
+
+```powershell
+$dataset = (Resolve-Path '..\P1-real-data\pilot-illustrations-v1').Path
+.\.venv\Scripts\python.exe -m planner_service.simulation.live_acceptance --seed 74 --manifest (Join-Path $dataset 'manifest.json') --data-root (Join-Path $dataset 'images') --output planner_service/artifacts/integration/live
+```
+
+工具保存 `recognize-{quyuan,zhaojun}-{request,response}.json`、
+`plan-summary-{request,response}.json`、动作轨迹和报告。为验证公共字段，
+也可将 [汇总请求样例](../contracts/sample_summary_request.json) 直接 POST 给服务。
+该样例回放有 40 个回合，最佳路线 43 步，含 38 次前进、5 次转向。
+从现场观测生成的汇总则按 `map_scope` 显示已确认子图的范围。
 
 ## Unity Live 联调
 
@@ -203,14 +256,14 @@ P2 复用 P1 的输入预处理、角色标签和 ONNX 推理。没有配置训�
 后端坐标顺序为 `[x,z]`，墙矩阵按 `[x][z]` 发送，C# 的 `Vector2Int.y` 对应 z。
 `theta` 的 0、90、180、270 分别表示北、东、南、西，旋转在路径中保留重复坐标。
 
-1. 先在 P2 worktree 启动服务，并用上面的 PowerShell 请求确认 `/plan_summary` 返回 200。
+1. 先在集成 worktree 启动服务，确认 `/recognize` 对留出图和 `/plan_summary` 对契约样例均返回 200。
    Unity 默认连接 `http://127.0.0.1:8000`，通过 `/openapi.json` 进入 Live。
    确认控制台或仪表盘显示 `LIVE API`，并观察后端的实际请求日志。
-2. 使用正式 ONNX 权重并配置 `PLANNER_ONNX_MODEL`。在 Unity 工程中将
+2. 确认 `PLANNER_ONNX_MODEL` 指向已校验的模型。在 Unity 工程中将
    `Assets/StreamingAssets/eval.example.json` 复制为本地 `eval.json`，
    设置 `_template_only=false`，填入两个不同格子、各自真实角色和图像路径。
    若场景指定识别相机，客户端发送相机截图；用能拍到对应人物的素材验证。
-   缺少正式权重时可执行 HTTP 预检和验证 Live 的 501 提示，三幕连续验收需等模型。
+   模型已在独立生成插画上验收，实际相机／渲染图需要在 Unity 场景中核对。
 3. 第一幕从未知地图开始。检查两个人物分别在踩格后触发 `/recognize`，
    `/next_action` 在发现前收到的 `slots` 省略对应人物。
    两次交付核验后须实际收到 `status=completed`，再发送一次 `/plan_summary`。
