@@ -182,7 +182,6 @@ namespace Ethan.CQSeven.RobotSim
             {
                 _isAnimating = false;
                 _actionDurationSeconds = 0f;
-                RecordCompletedAction(action, startPose);
                 ForwardBlocked?.Invoke(startPose);
                 ActionCompleted?.Invoke(new RobotActionResult(action, startPose, startPose,
                     false, true, 0f));

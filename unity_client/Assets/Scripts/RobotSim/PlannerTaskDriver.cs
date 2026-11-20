@@ -35,6 +35,7 @@ namespace Ethan.CQSeven.RobotSim
         private bool _awaitingInformation;
         private bool _postActionScanPending;
         private DemoAct _currentAct = DemoAct.Act1_OnlineMission;
+        private bool _lastReplayFailed;
 
         public event Action<TrajectoryDto> PlannerTrajectoryPreviewChanged;
         public event Action<RobotPose[]> ActualPathChanged;
@@ -384,6 +385,9 @@ namespace Ethan.CQSeven.RobotSim
             robot.TrySetSpeedMultiplier(2f);
             yield return RunReplayWorkflow(result.Value);
 
+            if (_lastReplayFailed)
+                yield break;
+
             _currentAct = DemoAct.Completed;
             ActChanged?.Invoke(_currentAct);
             SetStatus("Three-act demonstration completed successfully!");
@@ -391,6 +395,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private IEnumerator RunReplayWorkflow(PlanSummaryResponseDto summary)
         {
+            _lastReplayFailed = false;
             if (summary == null || summary.optimal_actions == null || summary.optimal_actions.Count == 0 || robot == null)
                 yield break;
 
@@ -409,7 +414,9 @@ namespace Ethan.CQSeven.RobotSim
                     }
                 }
                 if (optimalRecord == null)
-                    optimalRecord = summary.episode_records[0];
+                {
+                    Debug.LogWarning("[Replay] Could not find episode matching optimal_episode (" + summary.optimal_episode + ") in episode_records; will not fallback to record[0].");
+                }
             }
 
             var startPose = stateMachine != null ? stateMachine.InitialPose : new RobotPose(new Vector2Int(0, 0), RobotHeading.North);
@@ -436,7 +443,6 @@ namespace Ethan.CQSeven.RobotSim
             robot.EnterReplayMode(startPose);
             yield return new WaitForSeconds(0.4f);
 
-            var replayFailed = false;
             for (var i = 0; i < actions.Count; i++)
             {
                 var action = actions[i];
@@ -450,7 +456,7 @@ namespace Ethan.CQSeven.RobotSim
                 {
                     Debug.LogError("[Replay Blocked/Failed] Step " + i + ": action '" + action + "' blocked by wall or failed at pose " + robot.CurrentPose);
                     SetStatus("<color=red>复盘失败: 第 " + (i + 1) + " 步动作 '" + action + "' 遇阻碰墙!</color>");
-                    replayFailed = true;
+                    _lastReplayFailed = true;
                     break;
                 }
 
@@ -469,7 +475,7 @@ namespace Ethan.CQSeven.RobotSim
                 }
             }
 
-            if (!replayFailed)
+            if (!_lastReplayFailed)
             {
                 SetStatus("Act 3: Optimal trajectory replay completed successfully!");
                 yield return new WaitForSeconds(0.5f);

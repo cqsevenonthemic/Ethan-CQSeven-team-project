@@ -103,6 +103,7 @@ namespace Ethan.CQSeven.RobotSim
         // RL / Optimal progress card
         private Text _rlHeader;
         private Text _rlDetailText;
+        private PlanSummaryResponseDto _lastSummary;
 
         private bool _subscribed;
 
@@ -940,7 +941,14 @@ namespace Ethan.CQSeven.RobotSim
                     _actBadgeText.text = "第三幕: 最优路线复盘";
                     _rlHeader.color = new Color(1f, 0.84f, 0.1f);
                     _rlHeader.text = "【 第三幕: 全局最优路线复盘 】";
-                    _rlDetailText.text = "已生成金色最优路径。\n机器鼠正按全局收敛策略复盘回放 (2x)...";
+                    if (_lastSummary != null && _lastSummary.optimal_steps != null)
+                    {
+                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#f1fa8c>小车正按此路线以 2x 倍速闭环复盘回放...</color>";
+                    }
+                    else
+                    {
+                        _rlDetailText.text = "已生成金色最优路径。\n机器鼠正按全局收敛策略复盘回放 (2x)...";
+                    }
                     HighlightSpeedButton(2f);
                     break;
 
@@ -949,7 +957,14 @@ namespace Ethan.CQSeven.RobotSim
                     _actBadgeText.text = "三幕全流程演练完成";
                     _rlHeader.color = new Color(0.3f, 0.95f, 0.4f);
                     _rlHeader.text = "【 三幕演示任务圆满完成 】";
-                    _rlDetailText.text = "第一幕: 实时在线建图与多目标派送\n第二幕: Q-Learning 离线策略寻优\n第三幕: 最优轨迹物理闭环复盘";
+                    if (_lastSummary != null && _lastSummary.optimal_steps != null)
+                    {
+                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#8be9fd>三幕全流程闭环达成: 在线探索·离线寻优·真实复盘</color>";
+                    }
+                    else
+                    {
+                        _rlDetailText.text = "第一幕: 实时在线建图与多目标派送\n第二幕: Q-Learning 离线策略寻优\n第三幕: 最优轨迹物理闭环复盘";
+                    }
                     break;
             }
         }
@@ -1071,19 +1086,28 @@ namespace Ethan.CQSeven.RobotSim
             }
         }
 
+        private string FormatSummaryText(PlanSummaryResponseDto summary)
+        {
+            if (summary == null || summary.optimal_steps == null)
+                return string.Empty;
+
+            var provenTag = summary.optimality_proven ? "<color=#50fa7b>[理论最优·已数学证明]</color>" : "<color=#ffb86c>[训练最佳回合·未证最优]</color>";
+            var scopeTag = summary.map_scope == "complete_map" ? "全图范围" : "已确认子图";
+            var episodeStr = summary.optimal_episode > 0 ? "回合 #" + summary.optimal_episode : "40 轮训练最佳";
+            var exactStr = summary.exact_steps.HasValue ? "\n理论精确下界: " + summary.exact_steps.Value + " 步" : "";
+
+            return provenTag + "\n" +
+                "范围: " + scopeTag + " | " + episodeStr + "\n" +
+                "最佳步数: " + summary.optimal_steps.total + " 步 (直行 " + summary.optimal_steps.forward + " | 转向 " + summary.optimal_steps.turn + ")" +
+                exactStr;
+        }
+
         private void OnPlanSummaryLoaded(PlanSummaryResponseDto summary)
         {
+            _lastSummary = summary;
             if (summary != null && summary.optimal_steps != null && _rlDetailText != null)
             {
-                var provenTag = summary.optimality_proven ? "<color=#50fa7b>[理论最优·已数学证明]</color>" : "<color=#ffb86c>[训练最佳回合·未证最优]</color>";
-                var scopeTag = summary.map_scope == "complete_map" ? "全图范围" : "已确认子图";
-                var episodeStr = summary.optimal_episode > 0 ? "回合 #" + summary.optimal_episode : "40 轮训练最佳";
-                var exactStr = summary.exact_steps.HasValue ? "\n理论精确下界: " + summary.exact_steps.Value + " 步" : "";
-
-                _rlDetailText.text = provenTag + "\n" +
-                    "范围: " + scopeTag + " | " + episodeStr + "\n" +
-                    "最佳步数: " + summary.optimal_steps.total + " 步 (直行 " + summary.optimal_steps.forward + " | 转向 " + summary.optimal_steps.turn + ")" +
-                    exactStr;
+                _rlDetailText.text = FormatSummaryText(summary);
             }
         }
 

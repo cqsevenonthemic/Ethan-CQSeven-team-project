@@ -226,7 +226,7 @@ namespace Ethan.CQSeven.RobotSim
                     throw new InvalidOperationException("Both station locations must be discovered and recognized before requesting a summary.");
                 if (targets.ContainsKey(station.PredictedRole))
                     throw new InvalidOperationException("The recognized slots do not have distinct roles; summary targets are ambiguous.");
-                var targetCell = station.RecognitionCell != Vector2Int.zero ? station.RecognitionCell : station.Cell;
+                var targetCell = station.HasRecognitionCell ? station.RecognitionCell : station.Cell;
                 targets.Add(station.PredictedRole, new PoseCellDto(targetCell.x, targetCell.y));
             }
 
@@ -420,6 +420,7 @@ namespace Ethan.CQSeven.RobotSim
                 station.State = "discovered";
                 station.RecognitionId = Guid.NewGuid().ToString("N");
                 station.RecognitionCell = cell;
+                station.HasRecognitionCell = true;
                 StartCoroutine(RecognizeStation(station));
             }
         }
@@ -655,6 +656,7 @@ namespace Ethan.CQSeven.RobotSim
         public string RecognitionId { get; internal set; }
         public string RecognitionSource { get; internal set; }
         public Vector2Int RecognitionCell { get; internal set; }
+        public bool HasRecognitionCell { get; internal set; }
         public string PredictedRole { get; internal set; }
         public float Confidence { get; internal set; }
         public bool IsDiscovered { get; internal set; }
