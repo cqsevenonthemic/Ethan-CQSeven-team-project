@@ -1075,9 +1075,15 @@ namespace Ethan.CQSeven.RobotSim
         {
             if (summary != null && summary.optimal_steps != null && _rlDetailText != null)
             {
-                _rlDetailText.text = "[全局最优路线收敛完成]\n" +
-                    "最优总步数: " + summary.optimal_steps.total + " 步\n" +
-                    "(直行: " + summary.optimal_steps.forward + " 步 | 转向: " + summary.optimal_steps.turn + " 步)";
+                var provenTag = summary.optimality_proven ? "<color=#50fa7b>[理论最优·已数学证明]</color>" : "<color=#ffb86c>[训练最佳回合·未证最优]</color>";
+                var scopeTag = summary.map_scope == "complete_map" ? "全图范围" : "已确认子图";
+                var episodeStr = summary.optimal_episode > 0 ? "回合 #" + summary.optimal_episode : "40 轮训练最佳";
+                var exactStr = summary.exact_steps.HasValue ? "\n理论精确下界: " + summary.exact_steps.Value + " 步" : "";
+
+                _rlDetailText.text = provenTag + "\n" +
+                    "范围: " + scopeTag + " | " + episodeStr + "\n" +
+                    "最佳步数: " + summary.optimal_steps.total + " 步 (直行 " + summary.optimal_steps.forward + " | 转向 " + summary.optimal_steps.turn + ")" +
+                    exactStr;
             }
         }
 

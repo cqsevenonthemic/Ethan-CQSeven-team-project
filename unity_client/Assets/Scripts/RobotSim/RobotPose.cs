@@ -30,6 +30,18 @@ namespace Ethan.CQSeven.RobotSim
             Cell = cell;
             Heading = heading;
         }
+
+        public static RobotHeading HeadingFromDegrees(int degrees)
+        {
+            var normalized = ((degrees % 360) + 360) % 360;
+            switch (normalized)
+            {
+                case 90: return RobotHeading.East;
+                case 180: return RobotHeading.South;
+                case 270: return RobotHeading.West;
+                default: return RobotHeading.North;
+            }
+        }
     }
 
     public struct RobotActionResult

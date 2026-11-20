@@ -382,33 +382,97 @@ namespace Ethan.CQSeven.RobotSim
             }
 
             robot.TrySetSpeedMultiplier(2f);
-            yield return RunReplayWorkflow(result.Value.optimal_actions);
+            yield return RunReplayWorkflow(result.Value);
 
             _currentAct = DemoAct.Completed;
             ActChanged?.Invoke(_currentAct);
             SetStatus("Three-act demonstration completed successfully!");
         }
 
-        private IEnumerator RunReplayWorkflow(List<string> actions)
+        private IEnumerator RunReplayWorkflow(PlanSummaryResponseDto summary)
         {
-            if (actions == null || actions.Count == 0 || robot == null)
+            if (summary == null || summary.optimal_actions == null || summary.optimal_actions.Count == 0 || robot == null)
                 yield break;
 
+            var actions = summary.optimal_actions;
+
+            // Determine actual start_pose: extract from optimal record if present, else use stateMachine.InitialPose
+            EpisodeRecordDto optimalRecord = null;
+            if (summary.episode_records != null && summary.episode_records.Count > 0)
+            {
+                for (var r = 0; r < summary.episode_records.Count; r++)
+                {
+                    if (summary.episode_records[r].episode == summary.optimal_episode)
+                    {
+                        optimalRecord = summary.episode_records[r];
+                        break;
+                    }
+                }
+                if (optimalRecord == null)
+                    optimalRecord = summary.episode_records[0];
+            }
+
+            var startPose = stateMachine != null ? stateMachine.InitialPose : new RobotPose(new Vector2Int(0, 0), RobotHeading.North);
+            List<PoseDto> expectedPoses = null;
+            var switchSteps = new HashSet<int>();
+
+            if (optimalRecord != null)
+            {
+                if (optimalRecord.switch_steps != null)
+                {
+                    for (var s = 0; s < optimalRecord.switch_steps.Count; s++)
+                        switchSteps.Add(optimalRecord.switch_steps[s]);
+                }
+
+                if (optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null && optimalRecord.trajectory.poses.Count > 0)
+                {
+                    expectedPoses = optimalRecord.trajectory.poses;
+                    var firstPose = expectedPoses[0];
+                    startPose = new RobotPose(new Vector2Int(firstPose.x, firstPose.z), RobotPose.HeadingFromDegrees(firstPose.theta));
+                }
+            }
+
             stateMachine.IsReplayMode = true;
-            robot.EnterReplayMode(new RobotPose(new Vector2Int(0, 0), RobotHeading.North));
+            robot.EnterReplayMode(startPose);
             yield return new WaitForSeconds(0.4f);
 
+            var replayFailed = false;
             for (var i = 0; i < actions.Count; i++)
             {
                 var action = actions[i];
+
+                if (switchSteps.Contains(i))
+                {
+                    SetStatus("Act 3 复盘: 动作 #" + (i + 1) + " [" + action + "] (触发站点拾取/换人/派送)...");
+                }
+
                 if (!TryExecuteFirstAction(action))
                 {
-                    Debug.LogWarning("Replay action " + action + " failed at step " + i);
+                    Debug.LogError("[Replay Blocked/Failed] Step " + i + ": action '" + action + "' blocked by wall or failed at pose " + robot.CurrentPose);
+                    SetStatus("<color=red>复盘失败: 第 " + (i + 1) + " 步动作 '" + action + "' 遇阻碰墙!</color>");
+                    replayFailed = true;
                     break;
                 }
 
                 while (robot.IsActionInProgress)
                     yield return null;
+
+                // Pose verification against expected trajectory
+                if (expectedPoses != null && (i + 1) < expectedPoses.Count)
+                {
+                    var exp = expectedPoses[i + 1];
+                    var cur = robot.CurrentPose;
+                    if (cur.Cell.x != exp.x || cur.Cell.y != exp.z || cur.HeadingDegrees != exp.theta)
+                    {
+                        Debug.LogWarning("[Replay Pose Mismatch] Step " + (i + 1) + ": expected (" + exp.x + ", " + exp.z + ", " + exp.theta + "°), got (" + cur.Cell.x + ", " + cur.Cell.y + ", " + cur.HeadingDegrees + "°)");
+                    }
+                }
+            }
+
+            if (!replayFailed)
+            {
+                SetStatus("Act 3: Optimal trajectory replay completed successfully!");
+                yield return new WaitForSeconds(0.5f);
             }
 
             robot.ExitReplayMode();

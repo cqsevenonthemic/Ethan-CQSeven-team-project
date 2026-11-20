@@ -46,6 +46,7 @@ namespace Ethan.CQSeven.RobotSim
         public string StatusMessage { get; private set; } = "Waiting for planner service availability check.";
         public string ErrorMessage { get; private set; }
         public string CarrySlot { get; private set; }
+        public RobotPose InitialPose { get { return _initialPose; } }
         public IEnumerable<StationRuntimeState> Stations { get { return _stations; } }
         public int PendingEventCount { get { return _pendingEvents.Count; } }
         public bool IsReplayMode { get; set; }
@@ -225,7 +226,8 @@ namespace Ethan.CQSeven.RobotSim
                     throw new InvalidOperationException("Both station locations must be discovered and recognized before requesting a summary.");
                 if (targets.ContainsKey(station.PredictedRole))
                     throw new InvalidOperationException("The recognized slots do not have distinct roles; summary targets are ambiguous.");
-                targets.Add(station.PredictedRole, new PoseCellDto(station.Cell.x, station.Cell.y));
+                var targetCell = station.RecognitionCell != Vector2Int.zero ? station.RecognitionCell : station.Cell;
+                targets.Add(station.PredictedRole, new PoseCellDto(targetCell.x, targetCell.y));
             }
 
             return new PlanSummaryRequestDto

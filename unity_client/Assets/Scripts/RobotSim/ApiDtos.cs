@@ -141,6 +141,28 @@ namespace Ethan.CQSeven.RobotSim
     }
 
     [JsonObject(MemberSerialization.OptIn)]
+    public sealed class EpisodeTrajectoryDto
+    {
+        [JsonProperty("poses")] public List<PoseDto> poses;
+        [JsonProperty("actions")] public List<string> actions;
+        [JsonProperty("steps")] public int steps;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
+    public sealed class EpisodeRecordDto
+    {
+        [JsonProperty("episode")] public int episode;
+        [JsonProperty("behavior")] public string behavior;
+        [JsonProperty("epsilon")] public float epsilon;
+        [JsonProperty("reward")] public float reward;
+        [JsonProperty("completed")] public bool completed;
+        [JsonProperty("failure")] public string failure;
+        [JsonProperty("turns")] public int turns;
+        [JsonProperty("switch_steps")] public List<int> switch_steps;
+        [JsonProperty("trajectory")] public EpisodeTrajectoryDto trajectory;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
     public sealed class PlanSummaryResponseDto
     {
         [JsonProperty("explored_trajectories")] public List<int[][]> explored_trajectories;
@@ -148,6 +170,13 @@ namespace Ethan.CQSeven.RobotSim
         [JsonProperty("optimal_path")] public int[][] optimal_path;
         [JsonProperty("optimal_actions")] public List<string> optimal_actions;
         [JsonProperty("optimal_steps")] public OptimalStepsDto optimal_steps;
+        [JsonProperty("episode_records")] public List<EpisodeRecordDto> episode_records;
+        [JsonProperty("optimal_episode")] public int optimal_episode;
+        [JsonProperty("training_seed")] public int? training_seed;
+        [JsonProperty("training_episodes")] public int? training_episodes;
+        [JsonProperty("exact_steps")] public int? exact_steps;
+        [JsonProperty("map_scope")] public string map_scope;
+        [JsonProperty("optimality_proven")] public bool optimality_proven;
     }
 
     public sealed class ApiResult<T>

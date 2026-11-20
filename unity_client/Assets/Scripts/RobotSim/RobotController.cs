@@ -178,10 +178,6 @@ namespace Ethan.CQSeven.RobotSim
             _targetPosition = new Vector3(targetCellCenter.x, _startPosition.y, targetCellCenter.z);
             _startYaw = _pose.HeadingDegrees;
             _targetYaw = GetTargetYaw(_startYaw, action);
-            CountAction(action);
-            _isAnimating = true;
-            ActionStarted?.Invoke(action);
-
             if (blocked)
             {
                 _isAnimating = false;
@@ -190,7 +186,12 @@ namespace Ethan.CQSeven.RobotSim
                 ForwardBlocked?.Invoke(startPose);
                 ActionCompleted?.Invoke(new RobotActionResult(action, startPose, startPose,
                     false, true, 0f));
+                return false;
             }
+
+            CountAction(action);
+            _isAnimating = true;
+            ActionStarted?.Invoke(action);
             return true;
         }
 
