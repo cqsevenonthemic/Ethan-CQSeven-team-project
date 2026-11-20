@@ -104,6 +104,7 @@ namespace Ethan.CQSeven.RobotSim
         private Text _rlHeader;
         private Text _rlDetailText;
         private PlanSummaryResponseDto _lastSummary;
+        private DemoAct _currentAct = DemoAct.Act1_OnlineMission;
 
         private bool _subscribed;
 
@@ -207,6 +208,7 @@ namespace Ethan.CQSeven.RobotSim
                 stateMachine.RecognitionCompleted += OnRecognitionCompleted;
                 stateMachine.DeliveryValidated += OnDeliveryValidated;
                 stateMachine.SlotSwitched += OnSlotSwitched;
+                stateMachine.ReplayCarryStateUpdated += OnReplayCarryStateUpdated;
             }
             if (plannerClient != null)
             {
@@ -243,6 +245,7 @@ namespace Ethan.CQSeven.RobotSim
                 stateMachine.RecognitionCompleted -= OnRecognitionCompleted;
                 stateMachine.DeliveryValidated -= OnDeliveryValidated;
                 stateMachine.SlotSwitched -= OnSlotSwitched;
+                stateMachine.ReplayCarryStateUpdated -= OnReplayCarryStateUpdated;
             }
             if (plannerClient != null)
             {
@@ -996,6 +999,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnActChanged(DemoAct act)
         {
+            _currentAct = act;
             if (act == DemoAct.Act2_RlExploration || act == DemoAct.Act3_OptimalReplay || act == DemoAct.Completed)
             {
                 if (_rejectionAlert != null && _rejectionAlert.activeSelf)
@@ -1029,33 +1033,35 @@ namespace Ethan.CQSeven.RobotSim
                     break;
 
                 case DemoAct.Act3_OptimalReplay:
+                    var act3Title = GetRouteQualificationTitle(_lastSummary);
                     _actBadgeBg.color = new Color(0.85f, 0.65f, 0.05f, 0.95f);
-                    _actBadgeText.text = "第三幕: 最优路线复盘";
+                    _actBadgeText.text = "第三幕: " + act3Title + "复盘";
                     _rlHeader.color = new Color(1f, 0.84f, 0.1f);
-                    _rlHeader.text = "【 第三幕: 全局最优路线复盘 】";
+                    _rlHeader.text = "【 第三幕: " + act3Title + "复盘 】";
                     if (_lastSummary != null && _lastSummary.optimal_steps != null)
                     {
-                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#f1fa8c>小车正按此路线以 2x 倍速闭环复盘回放...</color>";
+                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#f1fa8c>小车正按" + act3Title + "以 2x 倍速闭环复盘回放...</color>";
                     }
                     else
                     {
-                        _rlDetailText.text = "已生成金色最优路径。\n机器鼠正按全局收敛策略复盘回放 (2x)...";
+                        _rlDetailText.text = "已生成金色规划路径。\n机器鼠正按" + act3Title + "复盘回放 (2x)...";
                     }
                     HighlightSpeedButton(2f);
                     break;
 
                 case DemoAct.Completed:
+                    var completedTitle = GetRouteQualificationTitle(_lastSummary);
                     _actBadgeBg.color = new Color(0.1f, 0.65f, 0.25f, 0.95f);
                     _actBadgeText.text = "三幕全流程演练完成";
                     _rlHeader.color = new Color(0.3f, 0.95f, 0.4f);
                     _rlHeader.text = "【 三幕演示任务圆满完成 】";
                     if (_lastSummary != null && _lastSummary.optimal_steps != null)
                     {
-                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#8be9fd>三幕全流程闭环达成: 在线探索·离线寻优·真实复盘</color>";
+                        _rlDetailText.text = FormatSummaryText(_lastSummary) + "\n<color=#8be9fd>三幕全流程闭环达成: 在线探索·离线寻优·" + completedTitle + "物理闭环</color>";
                     }
                     else
                     {
-                        _rlDetailText.text = "第一幕: 实时在线建图与多目标派送\n第二幕: Q-Learning 离线策略寻优\n第三幕: 最优轨迹物理闭环复盘";
+                        _rlDetailText.text = "第一幕: 实时在线建图与多目标派送\n第二幕: Q-Learning 离线策略寻优\n第三幕: " + completedTitle + "物理闭环复盘";
                     }
                     break;
             }
@@ -1149,6 +1155,12 @@ namespace Ethan.CQSeven.RobotSim
             }
         }
 
+        private void OnReplayCarryStateUpdated(string text)
+        {
+            if (_stationCarryText != null && !string.IsNullOrEmpty(text))
+                _stationCarryText.text = text;
+        }
+
         private IEnumerator ShowRejectionAlertCoroutine()
         {
             _rejectionAlert.SetActive(true);
@@ -1180,6 +1192,15 @@ namespace Ethan.CQSeven.RobotSim
             }
         }
 
+        public static string GetRouteQualificationTitle(PlanSummaryResponseDto summary)
+        {
+            if (summary != null && summary.optimality_proven && summary.map_scope == "complete_map")
+                return "全图理论最优路线";
+            if (summary != null && summary.optimality_proven)
+                return "已确认子图理论最优路线";
+            return "训练最佳回合路线（未证最优）";
+        }
+
         private string FormatSummaryText(PlanSummaryResponseDto summary)
         {
             if (summary == null || summary.optimal_steps == null)
@@ -1199,9 +1220,29 @@ namespace Ethan.CQSeven.RobotSim
         private void OnPlanSummaryLoaded(PlanSummaryResponseDto summary)
         {
             _lastSummary = summary;
+            var routeTitle = GetRouteQualificationTitle(summary);
+            if (_currentAct == DemoAct.Act3_OptimalReplay)
+            {
+                if (_actBadgeText != null)
+                    _actBadgeText.text = "第三幕: " + routeTitle + "复盘";
+                if (_rlHeader != null)
+                    _rlHeader.text = "【 第三幕: " + routeTitle + "复盘 】";
+            }
+
             if (summary != null && summary.optimal_steps != null && _rlDetailText != null)
             {
-                _rlDetailText.text = FormatSummaryText(summary);
+                if (_currentAct == DemoAct.Act3_OptimalReplay)
+                {
+                    _rlDetailText.text = FormatSummaryText(summary) + "\n<color=#f1fa8c>小车正按" + routeTitle + "以 2x 倍速闭环复盘回放...</color>";
+                }
+                else if (_currentAct == DemoAct.Completed)
+                {
+                    _rlDetailText.text = FormatSummaryText(summary) + "\n<color=#8be9fd>三幕全流程闭环达成: 在线探索·离线寻优·" + routeTitle + "物理闭环</color>";
+                }
+                else
+                {
+                    _rlDetailText.text = FormatSummaryText(summary);
+                }
             }
         }
 
@@ -1405,16 +1446,18 @@ namespace Ethan.CQSeven.RobotSim
             return btn;
         }
 
-        private static string TranslateStatusMessage(string message)
+        private string TranslateStatusMessage(string message)
         {
             if (string.IsNullOrEmpty(message)) return "";
 
+            var routeTitle = GetRouteQualificationTitle(_lastSummary);
+
             if (message.Contains("Three-act demonstration completed successfully"))
-                return "三幕全流程演示完成 · 已按全局收敛路线复盘";
+                return "三幕全流程演示完成 · 已按" + routeTitle + "复盘";
             if (message.Contains("Optimal trajectory replay completed successfully"))
-                return "第三幕: 全局最优收敛轨迹复盘完成";
+                return "第三幕: " + routeTitle + "复盘完成";
             if (message.Contains("Replaying optimal converged trajectory"))
-                return "第三幕: 正在以 2x 速度复盘全局最优轨迹...";
+                return "第三幕: 正在以 2x 速度复盘" + routeTitle + "...";
             if (message.Contains("Reinforcement Learning exploration visualization"))
                 return "第二幕: 强化学习多探索轨迹演进中 (20x 加速)...";
             if (message.Contains("Requesting Act 2 RL Plan Summary"))
@@ -1483,7 +1526,7 @@ namespace Ethan.CQSeven.RobotSim
             CreateLegendItem(bar.transform, "■ 西汉(7,7)", new Color(0.28f, 0.82f, 0.58f));
             CreateLegendItem(bar.transform, "■ 已探索格", new Color(0.24f, 0.42f, 0.58f));
             CreateLegendItem(bar.transform, "━ 探索轨迹", new Color(0f, 0.92f, 1f));
-            CreateLegendItem(bar.transform, "━ 最优路线", new Color(1f, 0.82f, 0.18f));
+            CreateLegendItem(bar.transform, "━ 最佳/最优路线", new Color(1f, 0.82f, 0.18f));
             CreateLegendItem(bar.transform, "● 激光点云", new Color(1f, 0.45f, 0.15f));
         }
 

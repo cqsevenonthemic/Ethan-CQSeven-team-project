@@ -40,6 +40,12 @@ namespace Ethan.CQSeven.RobotSim
         public event Action<DeliveryValidationEvent> DeliveryValidated;
         public event Action<string> StatusChanged;
         public event Action<bool, string> InitializationCompleted;
+        public event Action<string> ReplayCarryStateUpdated;
+
+        private string _replayCarrySlot;
+        private readonly Dictionary<string, GameObject> _replayStands = new Dictionary<string, GameObject>();
+        private readonly Dictionary<string, Vector2Int> _replayStationCells = new Dictionary<string, Vector2Int>();
+        private readonly Dictionary<string, bool> _replayDelivered = new Dictionary<string, bool>();
 
         public bool IsReady { get { return _isReady; } }
         public long ObservationSequence { get { return _observationSequence; } }
@@ -83,6 +89,12 @@ namespace Ethan.CQSeven.RobotSim
                 plannerClient.InitialModeResolved -= OnInitialModeResolved;
             if (robot != null && _runtimeEventsSubscribed)
                 robot.PoseChanged -= OnPoseChanged;
+            foreach (var kvp in _replayStands)
+            {
+                if (kvp.Value != null)
+                    Destroy(kvp.Value);
+            }
+            _replayStands.Clear();
         }
 
         /// <summary>
@@ -658,6 +670,192 @@ namespace Ethan.CQSeven.RobotSim
         {
             ErrorMessage = message;
             SetStatus(message);
+        }
+
+        public void BeginReplayStationVisuals()
+        {
+            _replayCarrySlot = null;
+            _replayDelivered.Clear();
+            _replayStationCells.Clear();
+
+            InitReplayStands();
+
+            for (var i = 0; i < _stations.Count; i++)
+            {
+                var s = _stations[i];
+                var cell = s.HasRecognitionCell ? s.RecognitionCell : s.Cell;
+                _replayStationCells[s.SlotId] = cell;
+                _replayDelivered[s.SlotId] = false;
+
+                if (_replayStands.TryGetValue(s.SlotId, out var stand) && stand != null)
+                {
+                    stand.transform.position = new Vector3(cell.x + 0.5f, 0.22f, cell.y + 0.5f);
+                    stand.SetActive(true);
+                }
+            }
+
+            ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+        }
+
+        public void StepReplayStationVisuals(Vector2Int currentCell, bool isSwitchStep)
+        {
+            // 1. Delivery check
+            if (!string.IsNullOrEmpty(_replayCarrySlot))
+            {
+                var role = GetStationRole(_replayCarrySlot);
+                var dest = GetDestinationForRole(role);
+                if (dest == currentCell)
+                {
+                    var deliveredSlot = _replayCarrySlot;
+                    _replayDelivered[deliveredSlot] = true;
+                    _replayStationCells[deliveredSlot] = currentCell;
+                    if (_replayStands.TryGetValue(deliveredSlot, out var stand) && stand != null)
+                    {
+                        stand.transform.position = new Vector3(currentCell.x + 0.5f, 0.22f, currentCell.y + 0.5f);
+                        stand.SetActive(true);
+                    }
+                    _replayCarrySlot = null;
+                }
+            }
+
+            // 2. Pickup / Switch check
+            string stationAtCell = null;
+            for (var i = 0; i < _stations.Count; i++)
+            {
+                var s = _stations[i];
+                var sId = s.SlotId;
+                if (_replayDelivered.TryGetValue(sId, out var del) && del)
+                    continue;
+                if (_replayCarrySlot == sId)
+                    continue;
+                if (_replayStationCells.TryGetValue(sId, out var sCell) && sCell == currentCell)
+                {
+                    stationAtCell = sId;
+                    break;
+                }
+            }
+
+            if (stationAtCell != null)
+            {
+                if (string.IsNullOrEmpty(_replayCarrySlot))
+                {
+                    // Pick up
+                    _replayCarrySlot = stationAtCell;
+                    if (_replayStands.TryGetValue(stationAtCell, out var stand) && stand != null)
+                    {
+                        stand.SetActive(false);
+                    }
+                }
+                else if (_replayCarrySlot != stationAtCell && isSwitchStep)
+                {
+                    // Swap: drop old stand at currentCell
+                    var oldSlot = _replayCarrySlot;
+                    _replayStationCells[oldSlot] = currentCell;
+                    if (_replayStands.TryGetValue(oldSlot, out var oldStand) && oldStand != null)
+                    {
+                        oldStand.transform.position = new Vector3(currentCell.x + 0.5f, 0.22f, currentCell.y + 0.5f);
+                        oldStand.SetActive(true);
+                    }
+
+                    _replayCarrySlot = stationAtCell;
+                    if (_replayStands.TryGetValue(stationAtCell, out var newStand) && newStand != null)
+                    {
+                        newStand.SetActive(false);
+                    }
+                }
+            }
+
+            // 3. UI Carry state update
+            if (!string.IsNullOrEmpty(_replayCarrySlot))
+            {
+                var r = GetStationRole(_replayCarrySlot);
+                var name = r == "quyuan" ? "屈原" : (r == "zhaojun" ? "王昭君" : _replayCarrySlot);
+                var destStr = r == "quyuan" ? " [目标 楚国(8,8)]" : (r == "zhaojun" ? " [目标 西汉(7,7)]" : "");
+                ReplayCarryStateUpdated?.Invoke("复盘携带: " + name + destStr);
+            }
+            else
+            {
+                ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+            }
+        }
+
+        public void EndReplayStationVisuals()
+        {
+            _replayCarrySlot = null;
+            foreach (var kvp in _replayStands)
+            {
+                if (kvp.Value != null)
+                    Destroy(kvp.Value);
+            }
+            _replayStands.Clear();
+            _replayStationCells.Clear();
+            _replayDelivered.Clear();
+            ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+        }
+
+        private void InitReplayStands()
+        {
+            foreach (var kvp in _replayStands)
+            {
+                if (kvp.Value != null)
+                    Destroy(kvp.Value);
+            }
+            _replayStands.Clear();
+
+            var shader = Shader.Find("Standard") ?? Shader.Find("Sprites/Default");
+
+            for (var i = 0; i < _stations.Count; i++)
+            {
+                var station = _stations[i];
+                var stand = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+                stand.name = "ReplayStand_" + station.SlotId;
+                var col = stand.GetComponent<Collider>();
+                if (col != null)
+                    Destroy(col);
+
+                stand.transform.localScale = new Vector3(0.38f, 0.22f, 0.38f);
+
+                var renderer = stand.GetComponent<Renderer>();
+                if (renderer != null && shader != null)
+                {
+                    var mat = new Material(shader);
+                    var role = GetStationRole(station.SlotId);
+                    if (role == "quyuan")
+                    {
+                        mat.color = new Color(1.0f, 0.65f, 0.15f, 1f);
+                    }
+                    else if (role == "zhaojun")
+                    {
+                        mat.color = new Color(0.2f, 0.88f, 0.6f, 1f);
+                    }
+                    else
+                    {
+                        mat.color = i == 0 ? new Color(1.0f, 0.65f, 0.15f, 1f) : new Color(0.2f, 0.88f, 0.6f, 1f);
+                    }
+                    renderer.material = mat;
+                }
+
+                _replayStands[station.SlotId] = stand;
+            }
+        }
+
+        private string GetStationRole(string slotId)
+        {
+            var station = FindStation(slotId);
+            if (station != null && !string.IsNullOrEmpty(station.PredictedRole))
+                return station.PredictedRole.ToLowerInvariant();
+            if (_truthRoles.TryGetValue(slotId, out var truthRole) && !string.IsNullOrEmpty(truthRole))
+                return truthRole.ToLowerInvariant();
+            return "";
+        }
+
+        private static Vector2Int GetDestinationForRole(string role)
+        {
+            if (role.IndexOf("quyuan", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new Vector2Int(8, 8);
+            if (role.IndexOf("zhaojun", StringComparison.OrdinalIgnoreCase) >= 0)
+                return new Vector2Int(7, 7);
+            return new Vector2Int(-1, -1);
         }
     }
 
