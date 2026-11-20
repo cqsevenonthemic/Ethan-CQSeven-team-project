@@ -400,7 +400,7 @@ namespace Ethan.CQSeven.RobotSim
             {
                 _lastReplayFailed = true;
                 Debug.LogError("[Replay Failed] Summary is null, optimal_actions is empty, or robot is null.");
-                SetStatus("<color=red>复盘失败: 摘要缺少有效最优动作或机器人未就绪</color>");
+                SetStatus("复盘失败: 摘要缺少有效最优动作或机器人未就绪");
                 yield break;
             }
 
@@ -420,29 +420,41 @@ namespace Ethan.CQSeven.RobotSim
                 }
             }
 
+            var isLive = plannerClient != null && plannerClient.Mode == PlannerClientMode.Live;
+
             if (optimalRecord == null)
             {
-                _lastReplayFailed = true;
-                Debug.LogError("[Replay Failed] Could not find episode matching optimal_episode (" + summary.optimal_episode + ") in episode_records.");
-                SetStatus("<color=red>复盘失败: 缺失 optimal_episode=" + summary.optimal_episode + " 的详细回合记录</color>");
-                yield break;
+                if (isLive)
+                {
+                    _lastReplayFailed = true;
+                    Debug.LogError("[Replay Failed] Could not find episode matching optimal_episode (" + summary.optimal_episode + ") in episode_records.");
+                    SetStatus("复盘失败: 缺失 optimal_episode=" + summary.optimal_episode + " 的详细回合记录");
+                    yield break;
+                }
+                else
+                {
+                    Debug.Log("[Replay Mock] sample_summary.json lacks episode_records for optimal_episode=" + summary.optimal_episode + "; fallback to initial pose and replay actions directly.");
+                }
             }
 
             var startPose = stateMachine != null ? stateMachine.InitialPose : new RobotPose(new Vector2Int(0, 0), RobotHeading.North);
             List<PoseDto> expectedPoses = null;
             var switchSteps = new HashSet<int>();
 
-            if (optimalRecord.switch_steps != null)
+            if (optimalRecord != null)
             {
-                for (var s = 0; s < optimalRecord.switch_steps.Count; s++)
-                    switchSteps.Add(optimalRecord.switch_steps[s]);
-            }
+                if (optimalRecord.switch_steps != null)
+                {
+                    for (var s = 0; s < optimalRecord.switch_steps.Count; s++)
+                        switchSteps.Add(optimalRecord.switch_steps[s]);
+                }
 
-            if (optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null && optimalRecord.trajectory.poses.Count > 0)
-            {
-                expectedPoses = optimalRecord.trajectory.poses;
-                var firstPose = expectedPoses[0];
-                startPose = new RobotPose(new Vector2Int(firstPose.x, firstPose.z), RobotPose.HeadingFromDegrees(firstPose.theta));
+                if (optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null && optimalRecord.trajectory.poses.Count > 0)
+                {
+                    expectedPoses = optimalRecord.trajectory.poses;
+                    var firstPose = expectedPoses[0];
+                    startPose = new RobotPose(new Vector2Int(firstPose.x, firstPose.z), RobotPose.HeadingFromDegrees(firstPose.theta));
+                }
             }
 
             stateMachine.IsReplayMode = true;
@@ -466,7 +478,7 @@ namespace Ethan.CQSeven.RobotSim
                 if (!TryExecuteFirstAction(action))
                 {
                     Debug.LogError("[Replay Blocked/Failed] Step " + i + ": action '" + action + "' blocked by wall or failed at pose " + robot.CurrentPose);
-                    SetStatus("<color=red>复盘失败: 第 " + (i + 1) + " 步动作 '" + action + "' 遇阻碰墙!</color>");
+                    SetStatus("复盘失败: 第 " + (i + 1) + " 步动作 '" + action + "' 遇阻碰墙!");
                     _lastReplayFailed = true;
                     break;
                 }
@@ -489,7 +501,7 @@ namespace Ethan.CQSeven.RobotSim
                     if (cur.Cell.x != exp.x || cur.Cell.y != exp.z || cur.HeadingDegrees != exp.theta)
                     {
                         Debug.LogError("[Replay Pose Mismatch] Step " + (i + 1) + ": expected (" + exp.x + ", " + exp.z + ", " + exp.theta + "°), got (" + cur.Cell.x + ", " + cur.Cell.y + ", " + cur.HeadingDegrees + "°)");
-                        SetStatus("<color=red>复盘位姿校验失败: 步骤 " + (i + 1) + " 实际位姿 (" + cur.Cell.x + "," + cur.Cell.y + "," + cur.HeadingDegrees + "°) 与预期 (" + exp.x + "," + exp.z + "," + exp.theta + "°) 不符！</color>");
+                        SetStatus("复盘位姿校验失败: 步骤 " + (i + 1) + " 实际位姿 (" + cur.Cell.x + "," + cur.Cell.y + "," + cur.HeadingDegrees + "°) 与预期 (" + exp.x + "," + exp.z + "," + exp.theta + "°) 不符！");
                         _lastReplayFailed = true;
                         break;
                     }

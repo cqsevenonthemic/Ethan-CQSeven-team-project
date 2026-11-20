@@ -1035,7 +1035,7 @@ namespace Ethan.CQSeven.RobotSim
                 case DemoAct.Act3_OptimalReplay:
                     var act3Title = GetRouteQualificationTitle(_lastSummary);
                     _actBadgeBg.color = new Color(0.85f, 0.65f, 0.05f, 0.95f);
-                    _actBadgeText.text = "第三幕: " + act3Title + "复盘";
+                    _actBadgeText.text = GetRouteQualificationBadgeTitle(_lastSummary);
                     _rlHeader.color = new Color(1f, 0.84f, 0.1f);
                     _rlHeader.text = "【 第三幕: " + act3Title + "复盘 】";
                     if (_lastSummary != null && _lastSummary.optimal_steps != null)
@@ -1093,7 +1093,11 @@ namespace Ethan.CQSeven.RobotSim
                 message.Contains("error") || message.Contains("501") || message.Contains("422") ||
                 message.Contains("失败") || message.Contains("遇阻")))
             {
-                _errorText.text = "⚠ " + (translated ?? message);
+                if (_errorText != null)
+                {
+                    _errorText.color = Color.white;
+                    _errorText.text = "⚠ " + (translated ?? message);
+                }
                 _errorBanner.SetActive(true);
 
                 if (message.Contains("501") || message.Contains("recognize"))
@@ -1201,6 +1205,15 @@ namespace Ethan.CQSeven.RobotSim
             return "训练最佳回合路线（未证最优）";
         }
 
+        public static string GetRouteQualificationBadgeTitle(PlanSummaryResponseDto summary)
+        {
+            if (summary != null && summary.optimality_proven && summary.map_scope == "complete_map")
+                return "第三幕: 全图最优复盘";
+            if (summary != null && summary.optimality_proven)
+                return "第三幕: 子图最优复盘";
+            return "第三幕: 最佳回合复盘";
+        }
+
         private string FormatSummaryText(PlanSummaryResponseDto summary)
         {
             if (summary == null || summary.optimal_steps == null)
@@ -1224,7 +1237,7 @@ namespace Ethan.CQSeven.RobotSim
             if (_currentAct == DemoAct.Act3_OptimalReplay)
             {
                 if (_actBadgeText != null)
-                    _actBadgeText.text = "第三幕: " + routeTitle + "复盘";
+                    _actBadgeText.text = GetRouteQualificationBadgeTitle(summary);
                 if (_rlHeader != null)
                     _rlHeader.text = "【 第三幕: " + routeTitle + "复盘 】";
             }
