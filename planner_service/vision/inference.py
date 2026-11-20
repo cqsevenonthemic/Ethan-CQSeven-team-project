@@ -39,7 +39,7 @@ class VisionRecognizer:
             with Image.open(io.BytesIO(raw)) as image:
                 if image.width * image.height > 16_000_000:
                     raise ValueError("image dimensions exceed the safe limit")
-                image = image.convert("RGB").resize(IMAGE_SIZE)
+                image = image.convert("RGB").resize(IMAGE_SIZE, Image.Resampling.BILINEAR)
                 array = np.asarray(image, dtype=np.float32) / 255.0
         except Exception as exc:
             raise ValueError("image could not be decoded") from exc
