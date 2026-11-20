@@ -48,6 +48,7 @@ namespace Ethan.CQSeven.RobotSim
         public string CarrySlot { get; private set; }
         public IEnumerable<StationRuntimeState> Stations { get { return _stations; } }
         public int PendingEventCount { get { return _pendingEvents.Count; } }
+        public bool IsReplayMode { get; set; }
 
         private void Start()
         {
@@ -161,6 +162,8 @@ namespace Ethan.CQSeven.RobotSim
 
         public bool ValidateCurrentDelivery()
         {
+            if (IsReplayMode)
+                return true;
             if (string.IsNullOrEmpty(CarrySlot) || robot == null || robot.Map == null)
                 return false;
             var cell = robot.CurrentPose.Cell;
@@ -393,7 +396,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnPoseChanged(RobotPose pose)
         {
-            if (!_isReady)
+            if (!_isReady || IsReplayMode)
                 return;
 
 

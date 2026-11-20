@@ -53,15 +53,15 @@ namespace Ethan.CQSeven.RobotSim
     public sealed class LidarSimulator : MonoBehaviour
     {
         private const float FanDegrees = 180f;
-        private const int MaximumRayCount = 181;
+        private const int MaximumRayCount = 361;
 
         [SerializeField] private RobotController robot;
-        [SerializeField, Range(3, MaximumRayCount)] private int rayCount = 37;
+        [SerializeField, Range(3, MaximumRayCount)] private int rayCount = 121;
         [SerializeField, Min(0.01f)] private float minimumRange = 0.15f;
         [SerializeField, Min(0.1f)] private float maximumRange = 4.5f;
         [SerializeField, Min(0.01f)] private float scanIntervalSeconds = 0.1f;
         [SerializeField, Min(0f)] private float lidarHeight = 0.35f;
-        [SerializeField, Min(0.01f)] private float hitMarkerSize = 0.045f;
+        [SerializeField, Min(0.01f)] private float hitMarkerSize = 0.11f;
         [SerializeField] private LayerMask obstacleLayers = ~0;
         [SerializeField] private Color rayColor = new Color(0.2f, 0.88f, 1f, 0.65f);
         [SerializeField] private Color hitColor = new Color(1f, 0.38f, 0.13f);
@@ -69,6 +69,8 @@ namespace Ethan.CQSeven.RobotSim
 
         private LineRenderer[] _rayLines;
         private GameObject[] _hitMarkers;
+        private ParticleSystem _pointCloudSystem;
+        private ParticleSystem.Particle[] _particles;
         private Transform _visualRoot;
         private Material _rayMaterial;
         private Material _hitMaterial;
@@ -136,12 +138,25 @@ namespace Ethan.CQSeven.RobotSim
             if (robot == null)
                 robot = FindFirstObjectByType<RobotController>();
             var map = robot == null ? null : robot.Map;
-            if (robot == null || map == null || _rayLines == null)
+            if (robot == null || map == null)
+                return _lastScan;
+
+            if (_rayLines == null || _rayLines.Length == 0 || _rayLines[0] == null)
+                CreateVisualPools();
+
+            if (_rayLines == null || _rayLines.Length == 0)
                 return _lastScan;
 
             var samples = new LidarRaySample[_rayLines.Length];
             var rayOrigin = robot.transform.position + Vector3.up * lidarHeight;
             var forward = robot.transform.forward;
+            var hitParticleIndex = 0;
+
+            if (_pointCloudSystem != null && (_particles == null || _particles.Length != _rayLines.Length))
+            {
+                _particles = new ParticleSystem.Particle[_rayLines.Length];
+            }
+
             for (var i = 0; i < _rayLines.Length; i++)
             {
                 var angle = Mathf.Lerp(-FanDegrees * 0.5f, FanDegrees * 0.5f,
@@ -160,11 +175,34 @@ namespace Ethan.CQSeven.RobotSim
                 _rayLines[i].SetPosition(0, rayOrigin);
                 _rayLines[i].SetPosition(1, physicalHitPoint);
                 _rayLines[i].enabled = true;
-                UpdateHitMarker(i, hasReportableHit, physicalHitPoint);
+
+                if (_pointCloudSystem != null)
+                {
+                    if (hasReportableHit && hitParticleIndex < _particles.Length)
+                    {
+                        var distNorm = Mathf.Clamp01((hit.distance - minimumRange) / Mathf.Max(0.1f, maximumRange - minimumRange));
+                        var pColor = Color.Lerp(new Color(1f, 0.35f, 0.1f, 1f), new Color(0.15f, 0.95f, 0.85f, 1f), distNorm);
+                        _particles[hitParticleIndex].position = physicalHitPoint;
+                        _particles[hitParticleIndex].startColor = pColor;
+                        _particles[hitParticleIndex].startSize = hitMarkerSize;
+                        _particles[hitParticleIndex].remainingLifetime = 1000f;
+                        hitParticleIndex++;
+                    }
+                }
+                else
+                {
+                    UpdateHitMarker(i, hasReportableHit, physicalHitPoint);
+                }
+
                 samples[i] = new LidarRaySample(angle, hasReportableHit, reportDistance,
                     hasReportableHit ? physicalHitPoint : Vector3.zero);
 
-                TraceObservedEdges(map, rayOrigin, direction, traceDistance, hasPhysicsHit, physicalHitPoint);
+                TraceObservedEdges(map, rayOrigin, direction, traceDistance, hasPhysicsHit, physicalHitPoint, hit.normal);
+            }
+
+            if (_pointCloudSystem != null && _particles != null)
+            {
+                _pointCloudSystem.SetParticles(_particles, hitParticleIndex);
             }
 
             _lastScan = new LidarScan(samples, FanDegrees, minimumRange, maximumRange);
@@ -173,7 +211,7 @@ namespace Ethan.CQSeven.RobotSim
         }
 
         private void TraceObservedEdges(MazeBuilder map, Vector3 origin, Vector3 direction,
-            float measuredDistance, bool hasPhysicalHit, Vector3 hitPoint)
+            float measuredDistance, bool hasPhysicalHit, Vector3 hitPoint, Vector3 hitNormal)
         {
             Vector2Int cell;
             if (!map.TryWorldToCell(origin, out cell))
@@ -202,14 +240,28 @@ namespace Ethan.CQSeven.RobotSim
                     (stepZ > 0 ? WallDirection.North : WallDirection.South);
                 var edgePlane = crossesX ? (stepX > 0 ? cell.x + 1f : cell.x) :
                     (stepZ > 0 ? cell.y + 1f : cell.y);
-                var hitOnThisPlane = hasPhysicalHit && (crossesX
-                    ? Mathf.Abs(hitPoint.x - edgePlane) <= edgeHitTolerance
-                    : Mathf.Abs(hitPoint.z - edgePlane) <= edgeHitTolerance);
 
-                if (hitOnThisPlane)
+                var planeDistanceClose = crossesX
+                    ? Mathf.Abs(hitPoint.x - edgePlane) <= edgeHitTolerance
+                    : Mathf.Abs(hitPoint.z - edgePlane) <= edgeHitTolerance;
+
+                if (hasPhysicalHit && planeDistanceClose)
                 {
-                    map.UpdateObservedEdge(cell, edge, true);
-                    return;
+                    var normalMatchesEdge = crossesX
+                        ? Mathf.Abs(hitNormal.x) > 0.5f
+                        : Mathf.Abs(hitNormal.z) > 0.5f;
+
+                    if (normalMatchesEdge)
+                    {
+                        map.UpdateObservedEdge(cell, edge, true);
+                        return;
+                    }
+                    else
+                    {
+                        // Ray hit corner/pillar where normal does not match crossed edge.
+                        // Conservatively terminate to prevent ghost walls and false open edges.
+                        return;
+                    }
                 }
 
                 if (crossingDistance > measuredDistance)
@@ -238,9 +290,37 @@ namespace Ethan.CQSeven.RobotSim
             _visualRoot.SetParent(transform, false);
             var boundedCount = Mathf.Clamp(rayCount, 3, MaximumRayCount);
             _rayLines = new LineRenderer[boundedCount];
-            _hitMarkers = new GameObject[boundedCount];
             _rayMaterial = CreateMaterial("Lidar_Rays", rayColor, true);
             _hitMaterial = CreateMaterial("Lidar_Hits", hitColor, false);
+
+            var highDensity = boundedCount > 60;
+            if (highDensity)
+            {
+                var psObject = new GameObject("LidarPointCloud");
+                psObject.transform.SetParent(_visualRoot, false);
+                _pointCloudSystem = psObject.AddComponent<ParticleSystem>();
+                var main = _pointCloudSystem.main;
+                main.simulationSpace = ParticleSystemSimulationSpace.World;
+                main.maxParticles = boundedCount;
+                main.startSpeed = 0f;
+                main.startLifetime = float.MaxValue;
+                main.loop = false;
+                main.playOnAwake = false;
+                var emission = _pointCloudSystem.emission;
+                emission.enabled = false;
+                var shape = _pointCloudSystem.shape;
+                shape.enabled = false;
+                var psRenderer = psObject.GetComponent<ParticleSystemRenderer>();
+                psRenderer.sharedMaterial = _hitMaterial;
+                _particles = new ParticleSystem.Particle[boundedCount];
+            }
+            else
+            {
+                _hitMarkers = new GameObject[boundedCount];
+            }
+
+            var startWidth = highDensity ? 0.016f : 0.02f;
+            var endWidth = highDensity ? 0.008f : 0.01f;
 
             for (var i = 0; i < boundedCount; i++)
             {
@@ -249,30 +329,37 @@ namespace Ethan.CQSeven.RobotSim
                 var line = rayObject.AddComponent<LineRenderer>();
                 line.useWorldSpace = true;
                 line.positionCount = 2;
-                line.startWidth = 0.009f;
-                line.endWidth = 0.004f;
+                line.startWidth = startWidth;
+                line.endWidth = endWidth;
                 line.sharedMaterial = _rayMaterial;
                 line.startColor = rayColor;
                 line.endColor = rayColor;
                 line.enabled = false;
                 _rayLines[i] = line;
 
-                var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                marker.name = "LidarHit_" + i;
-                marker.transform.SetParent(_visualRoot, false);
-                marker.transform.localScale = Vector3.one * hitMarkerSize;
-                marker.GetComponent<Renderer>().sharedMaterial = _hitMaterial;
-                var collider = marker.GetComponent<Collider>();
-                if (collider != null)
-                    Destroy(collider);
-                marker.SetActive(false);
-                _hitMarkers[i] = marker;
+                if (!highDensity)
+                {
+                    var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    marker.name = "LidarHit_" + i;
+                    marker.transform.SetParent(_visualRoot, false);
+                    marker.transform.localScale = Vector3.one * hitMarkerSize;
+                    marker.GetComponent<Renderer>().sharedMaterial = _hitMaterial;
+                    var collider = marker.GetComponent<Collider>();
+                    if (collider != null)
+                        Destroy(collider);
+                    marker.SetActive(false);
+                    _hitMarkers[i] = marker;
+                }
             }
         }
 
         private void UpdateHitMarker(int index, bool visible, Vector3 position)
         {
+            if (_hitMarkers == null || index < 0 || index >= _hitMarkers.Length)
+                return;
             var marker = _hitMarkers[index];
+            if (marker == null)
+                return;
             if (visible)
             {
                 marker.transform.position = position;

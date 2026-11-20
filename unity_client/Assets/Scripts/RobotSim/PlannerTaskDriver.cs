@@ -1,10 +1,19 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
 namespace Ethan.CQSeven.RobotSim
 {
+    public enum DemoAct
+    {
+        Act1_OnlineMission,
+        Act2_RlExploration,
+        Act3_OptimalReplay,
+        Completed
+    }
+
     /// <summary>Executes one planner action from a single immutable Unity snapshot at a time.</summary>
     public sealed class PlannerTaskDriver : MonoBehaviour
     {
@@ -12,6 +21,7 @@ namespace Ethan.CQSeven.RobotSim
         [SerializeField] private LidarSimulator lidar;
         [SerializeField] private PlannerHttpClient plannerClient;
         [SerializeField] private StateMachineTrigger stateMachine;
+        [SerializeField] private TrajectoryVisualizer visualizer;
 
         private PlannerProgressDto _progress;
         private string _lastObservationFingerprint;
@@ -24,14 +34,22 @@ namespace Ethan.CQSeven.RobotSim
         private bool _stopped;
         private bool _awaitingInformation;
         private bool _postActionScanPending;
+        private DemoAct _currentAct = DemoAct.Act1_OnlineMission;
 
         public event Action<TrajectoryDto> PlannerTrajectoryPreviewChanged;
         public event Action<RobotPose[]> ActualPathChanged;
         public event Action<string> StatusChanged;
+        public event Action<DemoAct> ActChanged;
+        public event Action<PlannerDecisionDto, RobotPose> DecisionEvaluated;
+        public event Action<int, int, int, int> RlProgressUpdated;
+        public event Action<PlanSummaryResponseDto> PlanSummaryLoaded;
 
+        public DemoAct CurrentAct { get { return _currentAct; } }
         public bool RequestInFlight { get { return _requestInFlight; } }
         public bool IsStopped { get { return _stopped; } }
         public long ObservationSequence { get { return _observationSequence; } }
+        public TrajectoryVisualizer Visualizer { get { return visualizer; } }
+        public PlannerHttpClient PlannerClient { get { return plannerClient; } }
 
         private void Start()
         {
@@ -43,6 +61,8 @@ namespace Ethan.CQSeven.RobotSim
                 plannerClient = FindFirstObjectByType<PlannerHttpClient>();
             if (stateMachine == null)
                 stateMachine = FindFirstObjectByType<StateMachineTrigger>();
+            if (visualizer == null)
+                visualizer = FindFirstObjectByType<TrajectoryVisualizer>();
 
             if (robot == null || lidar == null || plannerClient == null || stateMachine == null)
             {
@@ -96,17 +116,24 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnPoseChanged(RobotPose pose)
         {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
             _snapshotGeneration++;
         }
 
         private void OnActionStarted(RobotAction action)
         {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
             _snapshotGeneration++;
             _postActionScanPending = true;
         }
 
         private void OnActionCompleted(RobotActionResult result)
         {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+
             ActualPathChanged?.Invoke(robot.CopyExecutedPoses());
             if (result.BlockedByWall)
             {
@@ -126,7 +153,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnScanCompleted(LidarScan scan)
         {
-            if (!_initialized || scan == null)
+            if (!_initialized || scan == null || _currentAct != DemoAct.Act1_OnlineMission)
                 return;
 
             _observationSequence++;
@@ -156,12 +183,16 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnRecognitionCompleted(StationRuntimeState station)
         {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
             _snapshotGeneration++;
             TryRequestNextAction();
         }
 
         private void OnDeliveryValidated(DeliveryValidationEvent result)
         {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
             _snapshotGeneration++;
         }
 
@@ -169,7 +200,8 @@ namespace Ethan.CQSeven.RobotSim
         {
             if (!_initialized || _stopped || _awaitingInformation || _requestInFlight ||
                 _postActionScanPending || robot.IsActionInProgress || stateMachine.HasPendingRecognition ||
-                !string.IsNullOrEmpty(stateMachine.ErrorMessage) || _observationSequence == 0)
+                !string.IsNullOrEmpty(stateMachine.ErrorMessage) || _observationSequence == 0 ||
+                _currentAct != DemoAct.Act1_OnlineMission)
                 return;
 
             _requestInFlight = true;
@@ -240,6 +272,13 @@ namespace Ethan.CQSeven.RobotSim
             PlannerTrajectoryPreviewChanged?.Invoke(result.Value.trajectory);
             stateMachine.ReportPlannerStatus("Planner status: " + result.Value.status + ".");
 
+            // Notify UI of cost comparison decision whenever evaluated
+            if (result.Value.decision != null &&
+                (result.Value.decision.cost_keep.HasValue || result.Value.decision.cost_switch.HasValue))
+            {
+                DecisionEvaluated?.Invoke(result.Value.decision, robot.CurrentPose);
+            }
+
             if (stateMachine.PendingEventCount > 0)
             {
                 TryRequestNextAction();
@@ -286,8 +325,94 @@ namespace Ethan.CQSeven.RobotSim
                     _stopped = true;
                     SetStatus("Both state machines were verified at their correct destinations.");
                     Debug.Log("Planner task completed after " + robot.TotalStepCount + " actions.", this);
+                    StartCoroutine(RunPostCompletionWorkflow());
                     yield break;
             }
+        }
+
+        private IEnumerator RunPostCompletionWorkflow()
+        {
+            PlanSummaryRequestDto request = null;
+            try
+            {
+                request = stateMachine.BuildPlanSummaryRequest(robot.Map.GetObservedMaskSnapshot());
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Act 1 completed. Could not build summary request: " + ex.Message);
+                yield break;
+            }
+
+            SetStatus("Requesting Act 2 RL Plan Summary...");
+            ApiResult<PlanSummaryResponseDto> result = null;
+            yield return plannerClient.PlanSummary(request, value => result = value);
+
+            if (result == null || !result.Succeeded || result.Value == null)
+            {
+                var errorMsg = result == null ? "No response received" :
+                    (result.StatusCode == 501 ? "HTTP 501 (RL_NOT_IMPLEMENTED): Q-Learning summary not implemented yet." : result.Error);
+                SetStatus("Act 1 Complete. " + errorMsg);
+                yield break;
+            }
+
+            PlanSummaryLoaded?.Invoke(result.Value);
+            _currentAct = DemoAct.Act2_RlExploration;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Act 2: Reinforcement Learning exploration visualization running (20x)...");
+            robot.TrySetSpeedMultiplier(20f);
+
+            if (visualizer != null)
+            {
+                yield return visualizer.PlayRlTrajectories(result.Value, (k, total, steps, best) =>
+                {
+                    RlProgressUpdated?.Invoke(k, total, steps, best);
+                });
+            }
+            else
+            {
+                yield return new WaitForSeconds(1.5f);
+            }
+
+            _currentAct = DemoAct.Act3_OptimalReplay;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Act 3: Replaying optimal converged trajectory (2x)...");
+            if (visualizer != null)
+            {
+                visualizer.ShowOptimalPath(result.Value.optimal_path);
+            }
+
+            robot.TrySetSpeedMultiplier(2f);
+            yield return RunReplayWorkflow(result.Value.optimal_actions);
+
+            _currentAct = DemoAct.Completed;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Three-act demonstration completed successfully!");
+        }
+
+        private IEnumerator RunReplayWorkflow(List<string> actions)
+        {
+            if (actions == null || actions.Count == 0 || robot == null)
+                yield break;
+
+            stateMachine.IsReplayMode = true;
+            robot.EnterReplayMode(new RobotPose(new Vector2Int(0, 0), RobotHeading.North));
+            yield return new WaitForSeconds(0.4f);
+
+            for (var i = 0; i < actions.Count; i++)
+            {
+                var action = actions[i];
+                if (!TryExecuteFirstAction(action))
+                {
+                    Debug.LogWarning("Replay action " + action + " failed at step " + i);
+                    break;
+                }
+
+                while (robot.IsActionInProgress)
+                    yield return null;
+            }
+
+            robot.ExitReplayMode();
+            stateMachine.IsReplayMode = false;
         }
 
         private bool TryExecuteFirstAction(string action)

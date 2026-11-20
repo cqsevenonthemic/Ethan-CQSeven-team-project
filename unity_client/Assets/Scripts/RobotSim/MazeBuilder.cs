@@ -109,14 +109,17 @@ namespace Ethan.CQSeven.RobotSim
             if (!IsInBounds(cell) || opposite == 0 || !WallDirection.TryGetOffset(direction, out dx, out dz))
                 return false;
 
-            ApplyObservedMask(_seenWalls, cell, direction, true);
-            ApplyObservedMask(_knownWalls, cell, direction, hasWall);
-
             var neighbor = new Vector2Int(cell.x + dx, cell.y + dz);
-            if (IsInBounds(neighbor))
+            var isOuterBoundary = !IsInBounds(neighbor);
+            var effectiveHasWall = isOuterBoundary || hasWall;
+
+            ApplyObservedMask(_seenWalls, cell, direction, true);
+            ApplyObservedMask(_knownWalls, cell, direction, effectiveHasWall);
+
+            if (!isOuterBoundary)
             {
                 ApplyObservedMask(_seenWalls, neighbor, opposite, true);
-                ApplyObservedMask(_knownWalls, neighbor, opposite, hasWall);
+                ApplyObservedMask(_knownWalls, neighbor, opposite, effectiveHasWall);
             }
             return true;
         }
@@ -143,8 +146,17 @@ namespace Ethan.CQSeven.RobotSim
             for (var x = 0; x < Width; x++)
             {
                 var index = z * Width + x;
-                seen[index] = _seenWalls[z, x];
-                known[index] = _knownWalls[z, x];
+                var s = _seenWalls[z, x];
+                var k = _knownWalls[z, x];
+
+                // Outer boundary invariant guard: an observed outer boundary must always be a wall
+                if (z == Height - 1 && (s & WallDirection.North) != 0) k |= WallDirection.North;
+                if (x == Width - 1 && (s & WallDirection.East) != 0) k |= WallDirection.East;
+                if (z == 0 && (s & WallDirection.South) != 0) k |= WallDirection.South;
+                if (x == 0 && (s & WallDirection.West) != 0) k |= WallDirection.West;
+
+                seen[index] = s;
+                known[index] = k;
             }
             return new ObservedMaskSnapshot(Width, Height, seen, known);
         }

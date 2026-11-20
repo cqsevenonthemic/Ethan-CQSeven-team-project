@@ -310,6 +310,7 @@ GameObject:
   - component: {fileID: 339980992}
   - component: {fileID: 339980991}
   - component: {fileID: 339980990}
+  - component: {fileID: 339980993}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -376,6 +377,31 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
+--- !u!114 &339980993
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 339980989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6248b684065244c98fca84614c4140c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Ethan.CQSeven.RobotSim.CameraAndSpeedController
+  targetCamera: {fileID: 339980991}
+  robot: {fileID: 666897265}
+  dashboard: {fileID: 1204973839}
+  driver: {fileID: 1204973834}
+  currentView: 0
+  followSmoothSpeed: 10
+  topDownPosition: {x: 8, y: 25, z: -8}
+  topDownEuler: {x: 57.4, y: 0, z: 0}
+  thirdPersonDistance: 2.4
+  thirdPersonHeight: 1.6
+  thirdPersonLookHeight: 0.35
+  firstPersonHeight: 0.42
+  firstPersonForward: 0.16
 --- !u!4 &339980992
 Transform:
   m_ObjectHideFlags: 0
@@ -422,12 +448,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Ethan.CQSeven.RobotSim.LidarSimulator
   robot: {fileID: 666897265}
-  rayCount: 37
+  rayCount: 121
   minimumRange: 0.15
   maximumRange: 4.5
   scanIntervalSeconds: 0.1
   lidarHeight: 0.35
-  hitMarkerSize: 0.045
+  hitMarkerSize: 0.11
   obstacleLayers:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -479,6 +505,8 @@ GameObject:
   - component: {fileID: 1204973836}
   - component: {fileID: 1204973835}
   - component: {fileID: 1204973834}
+  - component: {fileID: 1204973838}
+  - component: {fileID: 1204973839}
   m_Layer: 0
   m_Name: Planner Runtime
   m_TagString: Untagged
@@ -502,6 +530,7 @@ MonoBehaviour:
   lidar: {fileID: 666897264}
   plannerClient: {fileID: 1204973836}
   stateMachine: {fileID: 1204973835}
+  visualizer: {fileID: 1204973838}
 --- !u!114 &1204973835
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -548,6 +577,38 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1204973838
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1204973833}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4117e57e3cb748c581e69ed76d558f4e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Ethan.CQSeven.RobotSim.TrajectoryVisualizer
+  driver: {fileID: 1204973834}
+  maze: {fileID: 1427584552}
+--- !u!114 &1204973839
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1204973833}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a0110b626e946ab95a78e4f2dc4d082, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Ethan.CQSeven.RobotSim.DashboardUI
+  driver: {fileID: 1204973834}
+  robot: {fileID: 666897265}
+  lidar: {fileID: 666897264}
+  stateMachine: {fileID: 1204973835}
+  plannerClient: {fileID: 1204973836}
+  cameraController: {fileID: 339980993}
 --- !u!1 &1281126066
 GameObject:
   m_ObjectHideFlags: 0

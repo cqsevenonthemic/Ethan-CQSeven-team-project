@@ -26,12 +26,21 @@ namespace Ethan.CQSeven.RobotSim
         private float _targetYaw;
         private float _elapsedSeconds;
         private float _actionDurationSeconds;
+
+        // Act 1 step counts
         private int _totalStepCount;
         private int _forwardStepCount;
         private int _leftTurnStepCount;
         private int _rightTurnStepCount;
         private readonly List<RobotPose> _executedPoses = new List<RobotPose>();
         private readonly List<RobotAction> _executedActions = new List<RobotAction>();
+
+        // Replay mode (Act 3) state
+        private bool _isReplayMode;
+        private int _replayStepCount;
+        private int _replayForwardStepCount;
+        private int _replayLeftTurnStepCount;
+        private int _replayRightTurnStepCount;
 
         public event Action<RobotAction> ActionStarted;
         public event Action<RobotActionResult> ActionCompleted;
@@ -49,6 +58,12 @@ namespace Ethan.CQSeven.RobotSim
         public float SpeedMultiplier { get { return speedMultiplier; } }
         public float CurrentActionDurationSeconds { get { return _actionDurationSeconds; } }
         public int ExecutedActionCount { get { return _executedActions.Count; } }
+
+        public bool IsReplayMode { get { return _isReplayMode; } }
+        public int ReplayStepCount { get { return _replayStepCount; } }
+        public int ReplayForwardStepCount { get { return _replayForwardStepCount; } }
+        public int ReplayLeftTurnStepCount { get { return _replayLeftTurnStepCount; } }
+        public int ReplayRightTurnStepCount { get { return _replayRightTurnStepCount; } }
 
         public RobotPose[] CopyExecutedPoses() { return _executedPoses.ToArray(); }
         public RobotAction[] CopyExecutedActions() { return _executedActions.ToArray(); }
@@ -110,6 +125,35 @@ namespace Ethan.CQSeven.RobotSim
             maze.MarkVisited(pose.Cell);
             _initialized = true;
             return true;
+        }
+
+        /// <summary>Enters replay mode without corrupting Act 1 recorded poses or steps.</summary>
+        public bool EnterReplayMode(RobotPose startPose)
+        {
+            if (maze == null || !maze.IsInBounds(startPose.Cell) || !IsValidHeading(startPose.Heading))
+                return false;
+
+            Vector3 center;
+            if (!maze.TryCellToWorld(startPose.Cell, out center))
+                return false;
+
+            _isAnimating = false;
+            _isReplayMode = true;
+            _replayStepCount = 0;
+            _replayForwardStepCount = 0;
+            _replayLeftTurnStepCount = 0;
+            _replayRightTurnStepCount = 0;
+            _pose = startPose;
+            transform.position = center;
+            transform.rotation = Quaternion.Euler(0f, startPose.HeadingDegrees, 0f);
+            PoseChanged?.Invoke(_pose);
+            return true;
+        }
+
+        /// <summary>Exits replay mode.</summary>
+        public void ExitReplayMode()
+        {
+            _isReplayMode = false;
         }
 
         /// <summary>Accepts and starts an action when idle. Wall-blocked forward attempts count once and complete immediately.</summary>
@@ -175,7 +219,7 @@ namespace Ethan.CQSeven.RobotSim
             transform.position = _targetPosition;
             transform.rotation = Quaternion.Euler(0f, _pose.HeadingDegrees, 0f);
             _isAnimating = false;
-            if (completedAction == RobotAction.Forward)
+            if (!_isReplayMode && completedAction == RobotAction.Forward)
                 maze.MarkVisited(_pose.Cell);
             PoseChanged?.Invoke(_pose);
             ActionCompleted?.Invoke(new RobotActionResult(completedAction, startPose, _pose,
@@ -184,19 +228,35 @@ namespace Ethan.CQSeven.RobotSim
 
         private void CountAction(RobotAction action)
         {
-            _totalStepCount++;
-            switch (action)
+            if (_isReplayMode)
             {
-                case RobotAction.Forward: _forwardStepCount++; break;
-                case RobotAction.TurnLeft: _leftTurnStepCount++; break;
-                case RobotAction.TurnRight: _rightTurnStepCount++; break;
+                _replayStepCount++;
+                switch (action)
+                {
+                    case RobotAction.Forward: _replayForwardStepCount++; break;
+                    case RobotAction.TurnLeft: _replayLeftTurnStepCount++; break;
+                    case RobotAction.TurnRight: _replayRightTurnStepCount++; break;
+                }
+            }
+            else
+            {
+                _totalStepCount++;
+                switch (action)
+                {
+                    case RobotAction.Forward: _forwardStepCount++; break;
+                    case RobotAction.TurnLeft: _leftTurnStepCount++; break;
+                    case RobotAction.TurnRight: _rightTurnStepCount++; break;
+                }
             }
         }
 
         private void RecordCompletedAction(RobotAction action, RobotPose endPose)
         {
-            _executedActions.Add(action);
-            _executedPoses.Add(endPose);
+            if (!_isReplayMode)
+            {
+                _executedActions.Add(action);
+                _executedPoses.Add(endPose);
+            }
         }
 
         private static RobotPose CalculateEndPose(RobotPose pose, RobotAction action)
