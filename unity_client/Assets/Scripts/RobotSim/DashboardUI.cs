@@ -286,6 +286,7 @@ namespace Ethan.CQSeven.RobotSim
             BuildDecisionCard(canvasGo.transform);
             BuildRejectionAlert(canvasGo.transform);
             BuildRlProgressCard(canvasGo.transform);
+            BuildLegendBar(canvasGo.transform);
         }
 
         private void BuildTopBar(Transform root)
@@ -405,6 +406,12 @@ namespace Ethan.CQSeven.RobotSim
             _radarImage.rectTransform.offsetMin = Vector2.zero;
             _radarImage.rectTransform.offsetMax = Vector2.zero;
 
+            // 4 scale/angle markers overlayed on radar scope
+            CreateRadarMarker(scopeContainer.transform, "-90°", new Vector2(0, 1), new Vector2(0, 1), new Vector2(6, -4), TextAnchor.UpperLeft);
+            CreateRadarMarker(scopeContainer.transform, "0° (4.5m)", new Vector2(0.5f, 1), new Vector2(0.5f, 1), new Vector2(0, -4), TextAnchor.UpperCenter);
+            CreateRadarMarker(scopeContainer.transform, "+90°", new Vector2(1, 1), new Vector2(1, 1), new Vector2(-6, -4), TextAnchor.UpperRight);
+            CreateRadarMarker(scopeContainer.transform, "0.15m 盲区", new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0, 4), TextAnchor.LowerCenter);
+
             // Telemetry Parameter Text Lines
             CreateCardText(card.transform, "Model", "对标型号: Hokuyo URG-04LX / SICK TiM561", 12, new Color(0.85f, 0.9f, 0.95f));
             CreateCardText(card.transform, "Fov", "视场量程: 180° 前向扇区 | 0.15m ~ 4.50m", 12, new Color(0.85f, 0.9f, 0.95f));
@@ -418,18 +425,25 @@ namespace Ethan.CQSeven.RobotSim
             _stationPanel = CreateCard(root, "StationPipelineCard", new Vector2(1, 1), new Vector2(1, 1),
                 new Vector2(1, 1), new Vector2(-16, -72), 340);
 
+            var panelVlg = _stationPanel.GetComponent<VerticalLayoutGroup>();
+            if (panelVlg != null)
+            {
+                panelVlg.padding = new RectOffset(16, 16, 16, 16);
+                panelVlg.spacing = 10;
+            }
+
             CreateCardHeader(_stationPanel.transform, "【 视觉识别检测流水线 (Vision) 】", new Color(1f, 0.82f, 0.2f));
 
             // Section A: 4 Pipeline Step Capsules
             var stepsContainer = CreateEmptyPanel(_stationPanel.transform, "PipelineSteps",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                Vector2.zero, new Vector2(RadarWidth, 26));
+                Vector2.zero, new Vector2(RadarWidth, 28));
             var stepsLe = stepsContainer.AddComponent<LayoutElement>();
             stepsLe.preferredWidth = RadarWidth;
-            stepsLe.preferredHeight = 26;
+            stepsLe.preferredHeight = 28;
 
             var hlg = stepsContainer.AddComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 4;
+            hlg.spacing = 8;
             hlg.childControlWidth = true;
             hlg.childControlHeight = true;
             hlg.childForceExpandWidth = true;
@@ -449,13 +463,13 @@ namespace Ethan.CQSeven.RobotSim
                     TextAnchor.MiddleCenter, new Color(0.75f, 0.8f, 0.85f), true);
             }
 
-            // Section B: Captured Image Viewport (312x160)
+            // Section B: Captured Image Viewport (180px height, 1:1 Aspect Ratio)
             var photoFrame = CreateEmptyPanel(_stationPanel.transform, "PhotoFrame",
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                Vector2.zero, new Vector2(RadarWidth, 160));
+                Vector2.zero, new Vector2(RadarWidth, 180));
             var frameLe = photoFrame.AddComponent<LayoutElement>();
             frameLe.preferredWidth = RadarWidth;
-            frameLe.preferredHeight = 160;
+            frameLe.preferredHeight = 180;
 
             var frameBg = photoFrame.AddComponent<Image>();
             frameBg.color = new Color(0.04f, 0.06f, 0.09f, 1f);
@@ -465,10 +479,9 @@ namespace Ethan.CQSeven.RobotSim
             var photoGo = new GameObject("StationPhoto");
             photoGo.transform.SetParent(photoFrame.transform, false);
             _stationPhoto = photoGo.AddComponent<RawImage>();
-            _stationPhoto.rectTransform.anchorMin = Vector2.zero;
-            _stationPhoto.rectTransform.anchorMax = Vector2.one;
-            _stationPhoto.rectTransform.offsetMin = new Vector2(3, 3);
-            _stationPhoto.rectTransform.offsetMax = new Vector2(-3, -3);
+            var photoArf = photoGo.AddComponent<AspectRatioFitter>();
+            photoArf.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
+            photoArf.aspectRatio = 1f;
             _stationPhoto.enabled = false;
 
             _stationPhotoPlaceholder = CreateFittedText(photoFrame.transform, "Placeholder",
@@ -499,48 +512,114 @@ namespace Ethan.CQSeven.RobotSim
                 TextAnchor.MiddleCenter, Color.white, true);
             _stationPhotoTag.SetActive(false);
 
-            // Section C: Dual-Class ONNX Confidence Comparison Bars
-            CreateCardText(_stationPanel.transform, "ConfTitle", "【 古装人物二分类概率 (ONNX) 】", 12, new Color(0.35f, 0.85f, 1f), true);
+            // 1px separator line after image viewport
+            CreateCardSeparator(_stationPanel.transform);
 
-            _quyuanFill = BuildConfidenceBar(_stationPanel.transform, "QuYuanBar", "屈原 (楚国终点 8,8)", out _quyuanProbText);
-            _zhaojunFill = BuildConfidenceBar(_stationPanel.transform, "ZhaoJunBar", "昭君 (西汉终点 7,7)", out _zhaojunProbText);
+            // Section C: Dual-Class ONNX Confidence Comparison Bars
+            CreateCardText(_stationPanel.transform, "ConfTitle", "【 古装人物二分类概率 (ONNX) 】", 12, new Color(0.35f, 0.85f, 1f), true, 20);
+
+            _quyuanFill = BuildConfidenceBar(_stationPanel.transform, "QuYuanBar", "屈原 · 楚国 (8,8)", out _quyuanProbText);
+            _zhaojunFill = BuildConfidenceBar(_stationPanel.transform, "ZhaoJunBar", "昭君 · 西汉 (7,7)", out _zhaojunProbText);
+
+            // 1px separator line after confidence bars
+            CreateCardSeparator(_stationPanel.transform);
 
             // Section D: Station and Carry Status
-            _stationLocationText = CreateCardText(_stationPanel.transform, "Location", "站点位置: 待机扫描 (未触发)", 12, new Color(0.85f, 0.9f, 0.95f));
-            _stationSourceText = CreateCardText(_stationPanel.transform, "Source", "推理引擎: ONNX Runtime (ResNet-18) / Mock", 12, new Color(0.85f, 0.9f, 0.95f));
-            _stationCarryText = CreateCardText(_stationPanel.transform, "Carry", "携带状态: 未携带人物", 12, new Color(0.4f, 0.9f, 1f), true);
-            _stationErrorText = CreateCardText(_stationPanel.transform, "Error", "", 12, new Color(1f, 0.35f, 0.35f), true);
+            _stationLocationText = CreateCardText(_stationPanel.transform, "Location", "站点位置: 待机扫描 (未触发)", 12, new Color(0.85f, 0.9f, 0.95f), false, 20);
+            _stationSourceText = CreateCardText(_stationPanel.transform, "Source", "推理引擎: ONNX Runtime (MobileNetV3)", 12, new Color(0.85f, 0.9f, 0.95f), false, 20);
+
+            // Emphasized Carry / Delivery Status Box with soft translucent deep teal background
+            var carryBox = CreateEmptyPanel(_stationPanel.transform, "CarryBox",
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, new Vector2(RadarWidth, 24));
+            var carryBoxLe = carryBox.AddComponent<LayoutElement>();
+            carryBoxLe.preferredWidth = RadarWidth;
+            carryBoxLe.preferredHeight = 24;
+            var carryBoxImg = carryBox.AddComponent<Image>();
+            carryBoxImg.color = new Color(0.06f, 0.20f, 0.26f, 0.75f);
+            var carryBoxOutline = carryBox.AddComponent<Outline>();
+            carryBoxOutline.effectColor = new Color(0.15f, 0.55f, 0.65f, 0.45f);
+            carryBoxOutline.effectDistance = new Vector2(1, -1);
+
+            _stationCarryText = CreateFittedText(carryBox.transform, "Carry", "携带状态: 未携带人物", 12,
+                TextAnchor.MiddleLeft, new Color(0.35f, 0.95f, 0.90f), true);
+            _stationCarryText.rectTransform.offsetMin = new Vector2(8, 0);
+            _stationCarryText.rectTransform.offsetMax = new Vector2(-8, 0);
+
+            _stationErrorText = CreateCardText(_stationPanel.transform, "Error", "", 12, new Color(1f, 0.35f, 0.35f), true, 20);
             _stationErrorText.gameObject.SetActive(false);
         }
 
         private Image BuildConfidenceBar(Transform parent, string name, string label, out Text probText)
         {
-            var row = CreateEmptyPanel(parent, name, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(RadarWidth, 24));
-            var rowLe = row.AddComponent<LayoutElement>();
-            rowLe.preferredWidth = RadarWidth;
-            rowLe.preferredHeight = 24;
+            var container = CreateEmptyPanel(parent, name, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(RadarWidth, 36));
+            var containerLe = container.AddComponent<LayoutElement>();
+            containerLe.preferredWidth = RadarWidth;
+            containerLe.preferredHeight = 36;
 
-            // Labels row
-            var labelText = CreateFittedText(row.transform, "Label", label, 11,
-                TextAnchor.MiddleLeft, new Color(0.8f, 0.86f, 0.92f));
-            labelText.rectTransform.anchorMax = new Vector2(0.75f, 0.6f);
+            var vlg = container.AddComponent<VerticalLayoutGroup>();
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.spacing = 4;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
 
-            probText = CreateFittedText(row.transform, "Prob", "0.0%", 11,
-                TextAnchor.MiddleRight, new Color(1f, 0.85f, 0.3f), true);
-            probText.rectTransform.anchorMin = new Vector2(0.75f, 0f);
+            // Line 1 (height 20px): Horizontal row with left label and right percentage text
+            var textRow = CreateEmptyPanel(container.transform, "TextRow",
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, new Vector2(RadarWidth, 20));
+            var textRowLe = textRow.AddComponent<LayoutElement>();
+            textRowLe.preferredWidth = RadarWidth;
+            textRowLe.preferredHeight = 20;
 
-            // Bar track
-            var track = CreateEmptyPanel(row.transform, "Track", new Vector2(0, 0), new Vector2(1, 0),
-                new Vector2(0.5f, 0), new Vector2(0, 0), new Vector2(0, 6));
+            var hlg = textRow.AddComponent<HorizontalLayoutGroup>();
+            hlg.padding = new RectOffset(0, 0, 0, 0);
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandHeight = true;
+
+            var nameGo = new GameObject("Name");
+            nameGo.transform.SetParent(textRow.transform, false);
+            var nameTxt = nameGo.AddComponent<Text>();
+            nameTxt.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (nameTxt.font == null) nameTxt.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            nameTxt.text = label;
+            nameTxt.fontSize = 12;
+            nameTxt.color = new Color(0.85f, 0.90f, 0.95f);
+            nameTxt.alignment = TextAnchor.MiddleLeft;
+            nameTxt.raycastTarget = false;
+
+            var probGo = new GameObject("Prob");
+            probGo.transform.SetParent(textRow.transform, false);
+            probText = probGo.AddComponent<Text>();
+            probText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (probText.font == null) probText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            probText.text = "0.0%";
+            probText.fontSize = 12;
+            probText.fontStyle = FontStyle.Bold;
+            probText.color = new Color(1f, 0.85f, 0.3f);
+            probText.alignment = TextAnchor.MiddleRight;
+            probText.raycastTarget = false;
+
+            // Line 2 (height 8px): Track and Fill
+            var track = CreateEmptyPanel(container.transform, "Track",
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                Vector2.zero, new Vector2(RadarWidth, 8));
+            var trackLe = track.AddComponent<LayoutElement>();
+            trackLe.preferredWidth = RadarWidth;
+            trackLe.preferredHeight = 8;
             var trackImg = track.AddComponent<Image>();
-            trackImg.color = new Color(0.12f, 0.16f, 0.22f, 1f);
+            trackImg.color = new Color(0.10f, 0.14f, 0.20f, 1f);
 
-            // Bar fill
-            var fill = CreateEmptyPanel(track.transform, "Fill", new Vector2(0, 0), new Vector2(0, 1),
+            var fill = CreateEmptyPanel(track.transform, "Fill",
+                new Vector2(0, 0), new Vector2(0, 1),
                 new Vector2(0, 0.5f), Vector2.zero, Vector2.zero);
             var fillImg = fill.AddComponent<Image>();
             fillImg.color = new Color(0.2f, 0.7f, 0.95f, 1f);
+
             return fillImg;
         }
 
@@ -987,23 +1066,25 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnStatusChanged(string message)
         {
-            if (_statusText != null && message != null)
-                _statusText.text = message;
+            var translated = TranslateStatusMessage(message);
+            if (_statusText != null && translated != null)
+                _statusText.text = translated;
 
             if (message != null && (message.Contains("failed") || message.Contains("stopped") ||
-                message.Contains("error") || message.Contains("501") || message.Contains("422")))
+                message.Contains("error") || message.Contains("501") || message.Contains("422") ||
+                message.Contains("失败") || message.Contains("遇阻")))
             {
-                _errorText.text = "⚠ " + message;
+                _errorText.text = "⚠ " + (translated ?? message);
                 _errorBanner.SetActive(true);
 
                 if (message.Contains("501") || message.Contains("recognize"))
                 {
                     StopScanningAnimation();
-                    SetPipelineStage(PipelineStepStage.Failed, message);
+                    SetPipelineStage(PipelineStepStage.Failed, translated ?? message);
                 }
             }
             else if (_errorBanner != null && _errorBanner.activeSelf &&
-                message != null && !message.Contains("error"))
+                message != null && !message.Contains("error") && !message.Contains("failed") && !message.Contains("失败"))
             {
                 _errorBanner.SetActive(false);
             }
@@ -1309,6 +1390,114 @@ namespace Ethan.CQSeven.RobotSim
             txt.raycastTarget = false;
 
             return btn;
+        }
+
+        private static string TranslateStatusMessage(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return "";
+
+            if (message.Contains("Three-act demonstration completed successfully"))
+                return "三幕全流程演示完成 · 已按全局收敛路线复盘";
+            if (message.Contains("Optimal trajectory replay completed successfully"))
+                return "第三幕: 全局最优收敛轨迹复盘完成";
+            if (message.Contains("Replaying optimal converged trajectory"))
+                return "第三幕: 正在以 2x 速度复盘全局最优轨迹...";
+            if (message.Contains("Reinforcement Learning exploration visualization"))
+                return "第二幕: 强化学习多探索轨迹演进中 (20x 加速)...";
+            if (message.Contains("Requesting Act 2 RL Plan Summary"))
+                return "正在请求强化学习探索汇总 (Plan Summary)...";
+            if (message.Contains("Both state machines were verified at their correct destinations"))
+                return "双站点人物均已送达指定终点，核验通过";
+            if (message.Contains("Known reachable area has no remaining task route"))
+                return "已知连通区域已全部探索完成";
+            if (message.Contains("Planner is waiting for new sensor information"))
+                return "等待雷达传感器获取新地图特征...";
+            if (message.Contains("Awaiting a scan that adds new walls"))
+                return "等待雷达扫描探测未知边界...";
+            if (message.Contains("Discarded a late response"))
+                return "本地快照已变更，忽略过时决策响应";
+            if (message.StartsWith("Act 1 Complete."))
+                return message.Replace("Act 1 Complete.", "第一幕探索完成 ·");
+            if (message.StartsWith("Act 1 completed."))
+                return message.Replace("Act 1 completed.", "第一幕探索完成 ·");
+
+            return message;
+        }
+
+        private void CreateRadarMarker(Transform parent, string text, Vector2 anchor, Vector2 pivot, Vector2 pos, TextAnchor alignment)
+        {
+            var go = new GameObject("RadarMarker_" + text);
+            go.transform.SetParent(parent, false);
+            var rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = anchor;
+            rt.anchorMax = anchor;
+            rt.pivot = pivot;
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = new Vector2(90, 16);
+
+            var txt = go.AddComponent<Text>();
+            txt.font = _font;
+            txt.text = text;
+            txt.fontSize = 10;
+            txt.color = new Color(0.55f, 0.75f, 0.88f, 0.85f);
+            txt.alignment = alignment;
+            txt.raycastTarget = false;
+        }
+
+        private void BuildLegendBar(Transform root)
+        {
+            var bar = CreateEmptyPanel(root, "BottomLegendBar",
+                new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+                new Vector2(0.5f, 0), new Vector2(0, 14), new Vector2(620, 30));
+
+            var barImg = bar.AddComponent<Image>();
+            barImg.color = new Color(0.04f, 0.07f, 0.12f, 0.88f);
+
+            var outline = bar.AddComponent<Outline>();
+            outline.effectColor = new Color(0.25f, 0.55f, 0.75f, 0.45f);
+            outline.effectDistance = new Vector2(1, -1);
+
+            var hlg = bar.AddComponent<HorizontalLayoutGroup>();
+            hlg.padding = new RectOffset(16, 16, 4, 4);
+            hlg.spacing = 14;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = true;
+            hlg.childForceExpandHeight = true;
+
+            CreateLegendItem(bar.transform, "■ 楚国(8,8)", new Color(0.96f, 0.73f, 0.18f));
+            CreateLegendItem(bar.transform, "■ 西汉(7,7)", new Color(0.28f, 0.82f, 0.58f));
+            CreateLegendItem(bar.transform, "■ 已探索格", new Color(0.24f, 0.42f, 0.58f));
+            CreateLegendItem(bar.transform, "━ 探索轨迹", new Color(0f, 0.92f, 1f));
+            CreateLegendItem(bar.transform, "━ 最优路线", new Color(1f, 0.82f, 0.18f));
+            CreateLegendItem(bar.transform, "● 激光点云", new Color(1f, 0.45f, 0.15f));
+        }
+
+        private void CreateLegendItem(Transform parent, string text, Color color)
+        {
+            var item = new GameObject("LegendItem");
+            item.transform.SetParent(parent, false);
+            var txt = item.AddComponent<Text>();
+            txt.font = _font;
+            txt.text = text;
+            txt.fontSize = 11;
+            txt.fontStyle = FontStyle.Normal;
+            txt.color = color;
+            txt.alignment = TextAnchor.MiddleCenter;
+            txt.raycastTarget = false;
+        }
+
+        private static GameObject CreateCardSeparator(Transform parent)
+        {
+            var sep = new GameObject("Separator");
+            sep.transform.SetParent(parent, false);
+            var sepLe = sep.AddComponent<LayoutElement>();
+            sepLe.minHeight = 1;
+            sepLe.preferredHeight = 1;
+            var sepImg = sep.AddComponent<Image>();
+            sepImg.color = new Color(0.25f, 0.45f, 0.65f, 0.35f);
+            return sep;
         }
     }
 }

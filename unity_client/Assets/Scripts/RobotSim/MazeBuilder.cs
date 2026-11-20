@@ -11,7 +11,7 @@ namespace Ethan.CQSeven.RobotSim
         [SerializeField] private float wallThickness = 0.08f;
         [SerializeField] private Color wallColor = new Color(0.18f, 0.22f, 0.28f);
         [SerializeField] private Color unexploredColor = new Color(0.22f, 0.28f, 0.34f);
-        [SerializeField] private Color exploredColor = new Color(0.48f, 0.62f, 0.68f);
+        [SerializeField] private Color exploredColor = new Color(0.24f, 0.42f, 0.58f, 1f);
         [SerializeField] private Color destinationColor = new Color(0.96f, 0.73f, 0.18f);
         [SerializeField] private Color secondDestinationColor = new Color(0.28f, 0.82f, 0.58f);
 

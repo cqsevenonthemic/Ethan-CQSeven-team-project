@@ -30,9 +30,9 @@ namespace Ethan.CQSeven.RobotSim
         [SerializeField] private float rlBaseHeight = 0.05f;
 
         [Header("Act 3 Optimal Visuals")]
-        [SerializeField] private Color optimalPathColor = new Color(1f, 0.84f, 0.1f, 1f);
-        [SerializeField] private float optimalPathWidth = 0.065f;
-        [SerializeField] private float optimalPathHeight = 0.08f;
+        [SerializeField] private Color optimalPathColor = new Color(1f, 0.82f, 0.18f, 1f);
+        [SerializeField] private float optimalPathWidth = 0.11f;
+        [SerializeField] private float optimalPathHeight = 0.09f;
 
         private Transform _visualRoot;
         private Transform _rlContainer;
@@ -114,7 +114,7 @@ namespace Ethan.CQSeven.RobotSim
             _actualPathMaterial = CreateMaterial("ActualPath_Mat", actualPathColor);
             _previewPathMaterial = CreateMaterial("PreviewPath_Mat", previewPathColor);
             _rlPathMaterial = CreateMaterial("RLPath_Mat", rlPathColor);
-            _dimmedRlMaterial = CreateMaterial("RLPath_Dimmed_Mat", new Color(rlPathColor.r, rlPathColor.g, rlPathColor.b, 0.18f));
+            _dimmedRlMaterial = CreateMaterial("RLPath_Dimmed_Mat", new Color(rlPathColor.r, rlPathColor.g, rlPathColor.b, 0.20f));
             _optimalPathMaterial = CreateMaterial("OptimalPath_Mat", optimalPathColor);
 
             _actualPathLine = CreateLine("ActualPathLine", _visualRoot, _actualPathMaterial, actualPathWidth);

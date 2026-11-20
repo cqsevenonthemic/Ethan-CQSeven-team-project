@@ -26,7 +26,7 @@ namespace Ethan.CQSeven.RobotSim
         [Header("View Settings")]
         [SerializeField] private CameraViewMode currentView = CameraViewMode.TopDown;
         [SerializeField, Min(1f)] private float followSmoothSpeed = 10f;
-        [SerializeField] private Vector3 topDownPosition = new Vector3(8f, 25f, -8f);
+        [SerializeField] private Vector3 topDownPosition = new Vector3(8f, 20f, -4.8f);
         [SerializeField] private Vector3 topDownEuler = new Vector3(57.4f, 0f, 0f);
 
         [Header("Third Person Offsets")]
@@ -82,11 +82,21 @@ namespace Ethan.CQSeven.RobotSim
             if (driver == null)
                 driver = FindFirstObjectByType<PlannerTaskDriver>();
 
+            if (targetCamera != null)
+            {
+                targetCamera.clearFlags = CameraClearFlags.SolidColor;
+                targetCamera.backgroundColor = new Color(0.043f, 0.067f, 0.110f, 1f);
+                if (targetCamera.orthographic)
+                {
+                    targetCamera.orthographicSize = 9.8f;
+                }
+            }
+
             if (targetCamera != null && currentView == CameraViewMode.TopDown)
             {
-                topDownPosition = targetCamera.transform.position;
-                topDownEuler = targetCamera.transform.eulerAngles;
-                _topDownRotation = targetCamera.transform.rotation;
+                topDownPosition = new Vector3(8f, 20f, -4.8f);
+                topDownEuler = new Vector3(57.4f, 0f, 0f);
+                _topDownRotation = Quaternion.Euler(topDownEuler);
             }
         }
 
