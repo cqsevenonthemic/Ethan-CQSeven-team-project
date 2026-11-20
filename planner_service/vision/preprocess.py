@@ -17,4 +17,3 @@ def build_transform(training: bool = False):
         operations.extend([transforms.RandomHorizontalFlip(), transforms.RandomRotation(8)])
     operations.extend([transforms.ToTensor(), transforms.Normalize(MEAN, STD)])
     return transforms.Compose(operations)
-

@@ -6,4 +6,3 @@ optional because P0 does not require PyTorch or image libraries.
 """
 
 LABELS = ("quyuan", "zhaojun")
-

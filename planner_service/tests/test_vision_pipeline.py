@@ -22,7 +22,6 @@ def test_recognize_loads_onnx_and_handles_bad_inputs(monkeypatch, tmp_path):
     pytest.importorskip("onnxruntime")
     image_module = pytest.importorskip("PIL.Image")
     module = importlib.import_module("planner_service.app")
-    monkeypatch.setattr(module, "_recognizer", None)
     path = tmp_path / "classifier.onnx"
     helper = onnx.helper
     float_type = onnx.TensorProto.FLOAT
@@ -61,8 +60,8 @@ def test_recognize_loads_onnx_and_handles_bad_inputs(monkeypatch, tmp_path):
         }
 
         invalid = client.post("/recognize", json={"image_base64": encode_image(raw[:8])})
-        assert invalid.status_code == 501
-        assert invalid.json()["error"]["code"] == "VISION_INVALID_IMAGE"
+        assert invalid.status_code == 422
+        assert invalid.json()["error"]["code"] == "INVALID_INPUT"
 
 
 @pytest.mark.parametrize("pretrained", [False, True], ids=["random-init", "imagenet-cache"])
@@ -137,7 +136,6 @@ def test_mobilenet_cuda_training_and_export(monkeypatch, tmp_path, pretrained):
 
     api = importlib.import_module("planner_service.app")
     monkeypatch.setenv("PLANNER_ONNX_MODEL", str(model_path))
-    monkeypatch.setattr(api, "_recognizer", None)
     with TestClient(api.app) as client:
         response = client.post("/recognize", json={"image_base64": encode_image(image_path.read_bytes())})
     assert response.status_code == 200

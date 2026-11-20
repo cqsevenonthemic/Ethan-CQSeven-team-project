@@ -7,12 +7,17 @@ import hashlib
 import io
 import os
 import uuid
+from functools import lru_cache
 
 from planner_service.vision import LABELS
 from planner_service.vision.preprocess import IMAGE_SIZE, MEAN, STD
 
 
 class ModelUnavailable(RuntimeError):
+    pass
+
+
+class VisionInferenceFailed(RuntimeError):
     pass
 
 
@@ -25,8 +30,14 @@ class VisionRecognizer:
             import onnxruntime as ort
         except ImportError as exc:
             raise ModelUnavailable("onnxruntime is not installed") from exc
-        self.session = ort.InferenceSession(self.model_path, providers=["CPUExecutionProvider"])
-        self.input_name = self.session.get_inputs()[0].name
+        try:
+            self.session = ort.InferenceSession(self.model_path, providers=["CPUExecutionProvider"])
+            inputs, outputs = self.session.get_inputs(), self.session.get_outputs()
+            if len(inputs) != 1 or len(outputs) != 1:
+                raise ValueError("Expected one input and one output")
+            self.input_name = inputs[0].name
+        except Exception as exc:
+            raise VisionInferenceFailed("The configured ONNX model could not be loaded") from exc
 
     def predict_base64(self, image_base64: str) -> dict:
         try:
@@ -37,6 +48,8 @@ class VisionRecognizer:
         try:
             raw = base64.b64decode(image_base64, validate=True)
             with Image.open(io.BytesIO(raw)) as image:
+                if image.format not in ("PNG", "JPEG"):
+                    raise ValueError("image must decode as PNG or JPEG")
                 if image.width * image.height > 16_000_000:
                     raise ValueError("image dimensions exceed the safe limit")
                 image = image.convert("RGB").resize(IMAGE_SIZE, Image.Resampling.BILINEAR)
@@ -44,10 +57,22 @@ class VisionRecognizer:
         except Exception as exc:
             raise ValueError("image could not be decoded") from exc
         array = (array - np.asarray(MEAN, dtype=np.float32)) / np.asarray(STD, dtype=np.float32)
-        logits = self.session.run(None, {self.input_name: np.transpose(array, (2, 0, 1))[None, ...]})[0][0]
-        probabilities = np.exp(logits - np.max(logits)); probabilities /= probabilities.sum()
+        batch = np.transpose(array, (2, 0, 1))[None, ...]
+        try:
+            logits = self.session.run(None, {self.input_name: batch})[0]
+        except Exception as exc:
+            raise VisionInferenceFailed("The configured ONNX model could not run inference") from exc
+        if logits.shape != (1, len(LABELS)) or not np.isfinite(logits).all():
+            raise VisionInferenceFailed("The configured model did not return finite two-class logits")
+        logits = logits[0]
+        probabilities = np.exp(logits - np.max(logits))
+        probabilities /= probabilities.sum()
         index = int(np.argmax(probabilities))
         return {"pred_role": LABELS[index], "confidence": float(probabilities[index]),
                 "recognition_id": f"onnx-{uuid.uuid4().hex}", "recognition_source": "onnx",
                 "image_sha256": hashlib.sha256(raw).hexdigest()}
 
+
+@lru_cache(maxsize=1)
+def recognizer_for(model_path: str) -> VisionRecognizer:
+    return VisionRecognizer(model_path)
