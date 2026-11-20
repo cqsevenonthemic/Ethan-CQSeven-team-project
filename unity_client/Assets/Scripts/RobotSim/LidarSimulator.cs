@@ -65,7 +65,7 @@ namespace Ethan.CQSeven.RobotSim
         [SerializeField] private LayerMask obstacleLayers = ~0;
         [SerializeField] private Color rayColor = new Color(0.2f, 0.88f, 1f, 0.65f);
         [SerializeField] private Color hitColor = new Color(1f, 0.38f, 0.13f);
-        [SerializeField, Min(0.01f)] private float edgeHitTolerance = 0.15f;
+        [SerializeField, Min(0.01f)] private float edgeHitTolerance = 0.08f;
 
         private LineRenderer[] _rayLines;
         private GameObject[] _hitMarkers;
@@ -241,30 +241,36 @@ namespace Ethan.CQSeven.RobotSim
                 var edgePlane = crossesX ? (stepX > 0 ? cell.x + 1f : cell.x) :
                     (stepZ > 0 ? cell.y + 1f : cell.y);
 
+                const float cornerMargin = 0.08f;
+                var distanceClose = Mathf.Abs(crossingDistance - measuredDistance) <= edgeHitTolerance;
                 var planeDistanceClose = crossesX
                     ? Mathf.Abs(hitPoint.x - edgePlane) <= edgeHitTolerance
                     : Mathf.Abs(hitPoint.z - edgePlane) <= edgeHitTolerance;
 
-                if (hasPhysicalHit && planeDistanceClose)
-                {
-                    var normalMatchesEdge = crossesX
-                        ? Mathf.Abs(hitNormal.x) > 0.5f
-                        : Mathf.Abs(hitNormal.z) > 0.5f;
+                var withinSegment = crossesX
+                    ? (hitPoint.z >= cell.y + cornerMargin && hitPoint.z <= cell.y + 1f - cornerMargin)
+                    : (hitPoint.x >= cell.x + cornerMargin && hitPoint.x <= cell.x + 1f - cornerMargin);
 
-                    if (normalMatchesEdge)
+                var normalMatchesEdge = crossesX
+                    ? (Mathf.Abs(hitNormal.x) > 0.5f && hitNormal.x * dx < 0f)
+                    : (Mathf.Abs(hitNormal.z) > 0.5f && hitNormal.z * dz < 0f);
+
+                if (hasPhysicalHit && distanceClose && planeDistanceClose)
+                {
+                    if (normalMatchesEdge && withinSegment)
                     {
                         map.UpdateObservedEdge(cell, edge, true);
                         return;
                     }
                     else
                     {
-                        // Ray hit corner/pillar where normal does not match crossed edge.
+                        // Ray hit corner/pillar where normal does not match crossed edge or is on end faces.
                         // Conservatively terminate to prevent ghost walls and false open edges.
                         return;
                     }
                 }
 
-                if (crossingDistance > measuredDistance)
+                if (crossingDistance >= measuredDistance - 0.01f)
                     return;
 
                 // Only crossings reached before a farther hit are known to be open.
