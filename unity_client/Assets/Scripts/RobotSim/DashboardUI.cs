@@ -996,6 +996,19 @@ namespace Ethan.CQSeven.RobotSim
 
         private void OnActChanged(DemoAct act)
         {
+            if (act == DemoAct.Act2_RlExploration || act == DemoAct.Act3_OptimalReplay || act == DemoAct.Completed)
+            {
+                if (_rejectionAlert != null && _rejectionAlert.activeSelf)
+                {
+                    if (_rejectionCoroutine != null)
+                    {
+                        StopCoroutine(_rejectionCoroutine);
+                        _rejectionCoroutine = null;
+                    }
+                    _rejectionAlert.SetActive(false);
+                }
+            }
+
             switch (act)
             {
                 case DemoAct.Act1_OnlineMission:

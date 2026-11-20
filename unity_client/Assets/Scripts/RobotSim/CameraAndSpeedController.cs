@@ -35,10 +35,12 @@ namespace Ethan.CQSeven.RobotSim
         [SerializeField] private float thirdPersonLookHeight = 0.35f;
 
         [Header("First Person Offsets")]
-        [SerializeField] private float firstPersonHeight = 0.42f;
-        [SerializeField] private float firstPersonForward = 0.16f;
+        [SerializeField] private float firstPersonHeight = 0.38f;
+        [SerializeField] private float firstPersonForward = 0.28f;
 
         private Quaternion _topDownRotation;
+        private bool _topDownOrthographic = true;
+        private float _topDownOrthographicSize = 9.8f;
         private bool _subscribed;
 
         public CameraViewMode CurrentView { get { return currentView; } }
@@ -86,10 +88,13 @@ namespace Ethan.CQSeven.RobotSim
             {
                 targetCamera.clearFlags = CameraClearFlags.SolidColor;
                 targetCamera.backgroundColor = new Color(0.043f, 0.067f, 0.110f, 1f);
+                _topDownOrthographic = targetCamera.orthographic;
                 if (targetCamera.orthographic)
                 {
                     targetCamera.orthographicSize = 9.8f;
                 }
+                _topDownOrthographicSize = targetCamera.orthographicSize;
+                ApplyCameraProjection();
             }
 
             if (targetCamera != null && currentView == CameraViewMode.TopDown)
@@ -148,6 +153,8 @@ namespace Ethan.CQSeven.RobotSim
             if (targetCamera == null)
                 return;
 
+            ApplyCameraProjection();
+
             Vector3 targetPosition;
             Quaternion targetRotation;
             CalculateViewTransform(out targetPosition, out targetRotation);
@@ -155,6 +162,23 @@ namespace Ethan.CQSeven.RobotSim
             var t = Time.deltaTime * followSmoothSpeed;
             targetCamera.transform.position = Vector3.Lerp(targetCamera.transform.position, targetPosition, t);
             targetCamera.transform.rotation = Quaternion.Slerp(targetCamera.transform.rotation, targetRotation, t);
+        }
+
+        private void ApplyCameraProjection()
+        {
+            if (targetCamera == null) return;
+
+            if (currentView == CameraViewMode.TopDown)
+            {
+                targetCamera.orthographic = true;
+                targetCamera.orthographicSize = _topDownOrthographicSize;
+            }
+            else
+            {
+                targetCamera.orthographic = false;
+                targetCamera.fieldOfView = 70f;
+                targetCamera.nearClipPlane = 0.05f;
+            }
         }
 
         private void CalculateViewTransform(out Vector3 position, out Quaternion rotation)
@@ -179,7 +203,7 @@ namespace Ethan.CQSeven.RobotSim
 
                 case CameraViewMode.FirstPerson:
                     position = robotPos + Vector3.up * firstPersonHeight + robotForward * firstPersonForward;
-                    rotation = robot.transform.rotation;
+                    rotation = robot.transform.rotation * Quaternion.Euler(10f, 0f, 0f);
                     break;
 
                 default:
@@ -204,6 +228,7 @@ namespace Ethan.CQSeven.RobotSim
                     break;
             }
 
+            ApplyCameraProjection();
             UpdateDashboardLabels();
         }
 
