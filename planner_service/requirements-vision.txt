@@ -1,0 +1,6 @@
+# Direct dependencies for the isolated Python 3.12 training environment.
+# Install the hash-verified torch and torchvision CUDA wheels in the same pip invocation.
+numpy==2.2.3
+onnx==1.17.0
+onnxruntime==1.20.1
+Pillow==11.1.0

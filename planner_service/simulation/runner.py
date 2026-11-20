@@ -1,5 +1,6 @@
 """Mock Unity owns truth and execution; decision_fn receives JSON observations only."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from time import perf_counter
@@ -32,8 +33,11 @@ class RunResult:
 
 def run_world(world: World, *, invert_first: bool = False, freeze_sensor: bool = False,
               decision_fn=local_decision, max_actions: int = 4096,
-              record_sensors: bool = False) -> RunResult:
+              record_sensors: bool = False,
+              recognize_figure: Callable[[str], dict] | None = None) -> RunResult:
     """Truth stays in this evaluator. Safeguards fail, never bypass, bad actions."""
+    if recognize_figure is not None and invert_first:
+        raise ValueError("Recognition fault injection applies only to the mock recognizer")
     world.validate()
     result = RunResult(seed=world.seed)
     started = perf_counter()
@@ -61,7 +65,12 @@ def run_world(world: World, *, invert_first: bool = False, freeze_sensor: bool =
         for index, figure in enumerate(world.figures):
             if figure.cell == (x, z) and index not in discovered:
                 slot_id = "s" + str(len(discovered) + 1)
-                prediction = recognize_mock(MOCK_IMAGES[figure.role], invert=invert_first and not discovered)
+                if recognize_figure is None:
+                    prediction = recognize_mock(MOCK_IMAGES[figure.role], invert=invert_first and not discovered)
+                else:
+                    # The role selects an evaluator-owned portrait at contact.
+                    # The live recognition request carries only the image bytes.
+                    prediction = dict(recognize_figure(figure.role))
                 discovered[index] = slot_id
                 true_roles[slot_id] = figure.role
                 confidence = prediction.pop("confidence")
