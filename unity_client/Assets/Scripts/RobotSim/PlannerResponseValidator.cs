@@ -6,12 +6,12 @@ namespace Ethan.CQSeven.RobotSim
     /// <summary>Rejects malformed or stale planner snapshots before Unity applies state or executes an action.</summary>
     public static class PlannerResponseValidator
     {
-        private const string Planning = "planning";
-        private const string Exploring = "exploring";
-        private const string AwaitingDelivery = "awaiting_delivery";
-        private const string AwaitingObservation = "awaiting_observation";
-        private const string Completed = "completed";
-        private const string Unreachable = "unreachable";
+        private const string Planning = ProtocolConstants.PlannerStatuses.Planning;
+        private const string Exploring = ProtocolConstants.PlannerStatuses.Exploring;
+        private const string AwaitingDelivery = ProtocolConstants.PlannerStatuses.AwaitingDelivery;
+        private const string AwaitingObservation = ProtocolConstants.PlannerStatuses.AwaitingObservation;
+        private const string Completed = ProtocolConstants.PlannerStatuses.Completed;
+        private const string Unreachable = ProtocolConstants.PlannerStatuses.Unreachable;
 
         public static bool TryValidate(NextActionRequestDto request, NextActionResponseDto response,
             out string error)
@@ -83,38 +83,39 @@ namespace Ethan.CQSeven.RobotSim
             foreach (KeyValuePair<string, SlotDto> entry in response.slots)
             {
                 var slot = entry.Value;
-                if ((entry.Key != "s1" && entry.Key != "s2") || slot == null)
+                if ((entry.Key != ProtocolConstants.SlotIds.S1 && entry.Key != ProtocolConstants.SlotIds.S2) || slot == null)
                     return Fail("The response contains an invalid slot.", out error);
-                if (slot.pred_role != "quyuan" && slot.pred_role != "zhaojun")
+                if (slot.pred_role != ProtocolConstants.Roles.QuYuan && slot.pred_role != ProtocolConstants.Roles.ZhaoJun)
                     return Fail("The response contains an invalid predicted role for " + entry.Key + ".", out error);
                 if (slot.x < 0 || slot.x >= 16 || slot.z < 0 || slot.z >= 16)
                     return Fail("The response contains an out-of-bounds slot for " + entry.Key + ".", out error);
-                if (slot.state != "waiting" && slot.state != "carried" && slot.state != "delivered")
+                if (slot.state != ProtocolConstants.SlotStates.Waiting && slot.state != ProtocolConstants.SlotStates.Carried && slot.state != ProtocolConstants.SlotStates.Delivered)
                     return Fail("The response contains an invalid state for " + entry.Key + ".", out error);
                 var requestHadSlot = request.slots != null && request.slots.ContainsKey(entry.Key);
-                var discoveryEventMatches = request.@event != null && request.@event.type == "trigger_discovered" &&
+                var discoveryEventMatches = request.@event != null && request.@event.type == ProtocolConstants.EventTypes.TriggerDiscovered &&
                                             request.@event.slot_id == entry.Key;
                 if (!requestHadSlot && !discoveryEventMatches)
                     return Fail("The response introduced a slot that was not in the request snapshot.", out error);
-                if (slot.state == "carried")
+                if (slot.state == ProtocolConstants.SlotStates.Carried)
                 {
                     carriedCount++;
                     if (entry.Key != response.carry_slot || slot.x != request.pose.x || slot.z != request.pose.z)
                         return Fail("The carried slot must match carry_slot and the current pose.", out error);
                 }
-                if (slot.state == "delivered")
+                if (slot.state == ProtocolConstants.SlotStates.Delivered)
                 {
                     deliveredCount++;
                     if (!slot.verified)
                         return Fail("A delivered slot must be verified.", out error);
-                    var expected = slot.pred_role == "quyuan" ? new PoseCellDto(8, 8) : new PoseCellDto(7, 7);
+                    var dest = MazeLayout.GetDestinationForRole(slot.pred_role);
+                    var expected = new PoseCellDto(dest.x, dest.y);
                     if (slot.x != expected.x || slot.z != expected.z)
                         return Fail("A delivered slot must be at the correct destination.", out error);
                 }
                 if (slot.verified && !verifiedRoles.Add(slot.pred_role))
                     return Fail("Two verified slots cannot have the same role.", out error);
-                if (slot.recognition_source != null && slot.recognition_source != "mock" &&
-                    slot.recognition_source != "onnx")
+                if (slot.recognition_source != null && slot.recognition_source != ProtocolConstants.RecognitionSources.Mock &&
+                    slot.recognition_source != ProtocolConstants.RecognitionSources.Onnx)
                     return Fail("The response contains an unknown recognition_source.", out error);
             }
 
@@ -133,7 +134,9 @@ namespace Ethan.CQSeven.RobotSim
 
         private static bool IsAction(string action)
         {
-            return action == "forward" || action == "turn_left" || action == "turn_right";
+            return action == ProtocolConstants.Actions.Forward ||
+                   action == ProtocolConstants.Actions.TurnLeft ||
+                   action == ProtocolConstants.Actions.TurnRight;
         }
 
         private static bool SamePose(PoseDto left, PoseDto right)
@@ -156,14 +159,14 @@ namespace Ethan.CQSeven.RobotSim
             var theta = start.theta;
             switch (action)
             {
-                case "forward":
+                case ProtocolConstants.Actions.Forward:
                     if (theta == 0) z++;
                     else if (theta == 90) x++;
                     else if (theta == 180) z--;
                     else x--;
                     break;
-                case "turn_left": theta = (theta + 270) % 360; break;
-                case "turn_right": theta = (theta + 90) % 360; break;
+                case ProtocolConstants.Actions.TurnLeft: theta = (theta + 270) % 360; break;
+                case ProtocolConstants.Actions.TurnRight: theta = (theta + 90) % 360; break;
                 default: return false;
             }
             return end.x == x && end.z == z && end.theta == theta;

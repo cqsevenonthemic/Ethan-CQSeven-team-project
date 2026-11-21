@@ -13,8 +13,8 @@ namespace Ethan.CQSeven.RobotSim
     {
         private const string EvaluationFileName = "eval.json";
         private const string MockEvaluationFileName = "mock_evaluation.json";
-        private const string TriggerDiscoveredType = "trigger_discovered";
-        private const string DeliveryRejectedType = "delivery_rejected";
+        private const string TriggerDiscoveredType = ProtocolConstants.EventTypes.TriggerDiscovered;
+        private const string DeliveryRejectedType = ProtocolConstants.EventTypes.DeliveryRejected;
 
         [SerializeField] private RobotController robot;
         [SerializeField] private PlannerHttpClient plannerClient;
@@ -138,7 +138,7 @@ namespace Ethan.CQSeven.RobotSim
                 if (!station.IsDiscovered || !station.IsRecognized || string.IsNullOrEmpty(station.PredictedRole))
                     continue;
 
-                if (station.SlotId == CarrySlot && station.State == "carried")
+                if (station.SlotId == CarrySlot && station.State == ProtocolConstants.SlotStates.Carried)
                 {
                     station.Cell = pose.Cell;
                 }
@@ -279,7 +279,7 @@ namespace Ethan.CQSeven.RobotSim
                 if (previousStation != null)
                 {
                     previousStation.Cell = currentCell;
-                    previousStation.State = "waiting";
+                    previousStation.State = ProtocolConstants.SlotStates.Waiting;
                 }
             }
 
@@ -309,7 +309,7 @@ namespace Ethan.CQSeven.RobotSim
                 if (carriedStation == null)
                     throw new InvalidOperationException("Planner returned an unknown carried slot: " + CarrySlot);
                 carriedStation.Cell = currentCell;
-                carriedStation.State = "carried";
+                carriedStation.State = ProtocolConstants.SlotStates.Carried;
             }
 
             if (response.decision != null && response.decision.switched)
@@ -357,8 +357,8 @@ namespace Ethan.CQSeven.RobotSim
             {
                 var config = JsonConvert.DeserializeObject<EvaluationConfig>(json);
                 ValidateConfig(config, mode == PlannerClientMode.Mock);
-                AddStation("s1", config.s1);
-                AddStation("s2", config.s2);
+                AddStation(ProtocolConstants.SlotIds.S1, config.s1);
+                AddStation(ProtocolConstants.SlotIds.S2, config.s2);
                 _initialPose = robot.CurrentPose;
                 _isReady = true;
                 robot.PoseChanged += OnPoseChanged;
@@ -395,8 +395,8 @@ namespace Ethan.CQSeven.RobotSim
                 throw new JsonSerializationException("Mock station data must set _fixture_only to true.");
             if (config.s1 == null || config.s2 == null)
                 throw new JsonSerializationException("Both s1 and s2 station entries are required.");
-            ValidateStation("s1", config.s1);
-            ValidateStation("s2", config.s2);
+            ValidateStation(ProtocolConstants.SlotIds.S1, config.s1);
+            ValidateStation(ProtocolConstants.SlotIds.S2, config.s2);
             if (config.s1.x == config.s2.x && config.s1.z == config.s2.z)
                 throw new JsonSerializationException("The two state-machine positions must be distinct.");
         }
@@ -408,7 +408,7 @@ namespace Ethan.CQSeven.RobotSim
             if (!robot.Map.IsInBounds(new Vector2Int(station.x.Value, station.z.Value)))
                 throw new JsonSerializationException(slotId + " coordinates are outside the " +
                     robot.Map.Width + "x" + robot.Map.Height + " maze.");
-            if (station.role != "quyuan" && station.role != "zhaojun")
+            if (station.role != ProtocolConstants.Roles.QuYuan && station.role != ProtocolConstants.Roles.ZhaoJun)
                 throw new JsonSerializationException(slotId + " role must be exactly quyuan or zhaojun.");
             if (recognitionCamera == null && string.IsNullOrWhiteSpace(station.image_path))
                 throw new JsonSerializationException(slotId + " needs image_path when no recognition camera is assigned.");
@@ -422,7 +422,7 @@ namespace Ethan.CQSeven.RobotSim
             if (!string.IsNullOrEmpty(CarrySlot))
             {
                 var carried = FindStation(CarrySlot);
-                if (carried != null && carried.State == "carried")
+                if (carried != null && carried.State == ProtocolConstants.SlotStates.Carried)
                 {
                     carried.Cell = pose.Cell;
                 }
@@ -485,7 +485,7 @@ namespace Ethan.CQSeven.RobotSim
                 yield break;
             }
 
-            if (result.Value.pred_role != "quyuan" && result.Value.pred_role != "zhaojun")
+            if (result.Value.pred_role != ProtocolConstants.Roles.QuYuan && result.Value.pred_role != ProtocolConstants.Roles.ZhaoJun)
             {
                 _recognitionsInFlight--;
                 SetError("Recognition returned an unsupported role for " + station.SlotId + ".");
@@ -494,9 +494,9 @@ namespace Ethan.CQSeven.RobotSim
 
             station.PredictedRole = result.Value.pred_role;
             station.Confidence = result.Value.confidence;
-            station.RecognitionSource = plannerClient.Mode == PlannerClientMode.Mock ? "mock" : "onnx";
+            station.RecognitionSource = plannerClient.Mode == PlannerClientMode.Mock ? ProtocolConstants.RecognitionSources.Mock : ProtocolConstants.RecognitionSources.Onnx;
             station.IsRecognized = true;
-            station.State = "waiting";
+            station.State = ProtocolConstants.SlotStates.Waiting;
             _pendingEvents.Enqueue(new NextActionEventDto
             {
                 type = TriggerDiscoveredType,
@@ -559,12 +559,12 @@ namespace Ethan.CQSeven.RobotSim
             if (station == null || !station.IsRecognized)
                 return;
 
-            var destinationRole = cell == robot.Map.FirstDestination ? "quyuan" : "zhaojun";
+            var destinationRole = cell == robot.Map.FirstDestination ? ProtocolConstants.Roles.QuYuan : ProtocolConstants.Roles.ZhaoJun;
             var truthRole = _truthRoles[station.SlotId];
             var accepted = truthRole == destinationRole;
             if (accepted)
             {
-                station.State = "delivered";
+                station.State = ProtocolConstants.SlotStates.Delivered;
                 station.IsVerified = true;
                 CarrySlot = null;
                 DeliveryValidated?.Invoke(new DeliveryValidationEvent(station.SlotId, cell, true, null));
@@ -579,7 +579,7 @@ namespace Ethan.CQSeven.RobotSim
                 rejected_at = new PoseCellDto(cell.x, cell.y)
             });
             _rejectedCellUntilLeave = cell;
-            station.State = "carried";
+            station.State = ProtocolConstants.SlotStates.Carried;
             var message = "Delivery rejected for " + station.SlotId + " at (" + cell.x + "," + cell.y + ").";
             DeliveryValidated?.Invoke(new DeliveryValidationEvent(station.SlotId, cell, false, message));
             SetStatus(message);
@@ -769,8 +769,8 @@ namespace Ethan.CQSeven.RobotSim
             if (!string.IsNullOrEmpty(_replayCarrySlot))
             {
                 var r = GetStationRole(_replayCarrySlot);
-                var name = r == "quyuan" ? "屈原" : (r == "zhaojun" ? "王昭君" : _replayCarrySlot);
-                var destStr = r == "quyuan" ? " [目标 楚国(8,8)]" : (r == "zhaojun" ? " [目标 西汉(7,7)]" : "");
+                var name = ProtocolConstants.Roles.ToDisplayName(r, _replayCarrySlot);
+                var destStr = !string.IsNullOrEmpty(r) ? " [目标 " + MazeLayout.GetDestinationDisplayName(r) + "]" : "";
                 ReplayCarryStateUpdated?.Invoke("复盘携带: " + name + destStr);
             }
             else
@@ -779,18 +779,37 @@ namespace Ethan.CQSeven.RobotSim
             }
         }
 
-        public void EndReplayStationVisuals()
+        public void EndReplayStationVisuals(bool replaySuccess = true)
         {
             _replayCarrySlot = null;
-            foreach (var kvp in _replayStands)
+            if (replaySuccess)
             {
-                if (kvp.Value != null)
-                    Destroy(kvp.Value);
+                // Ensure both stands remain active and clearly displayed at their destinations (8,8) and (7,7)
+                for (var i = 0; i < _stations.Count; i++)
+                {
+                    var s = _stations[i];
+                    var role = GetStationRole(s.SlotId);
+                    var dest = GetDestinationForRole(role);
+                    if (dest.x >= 0 && _replayStands.TryGetValue(s.SlotId, out var stand) && stand != null)
+                    {
+                        stand.transform.position = new Vector3((dest.x + 0.5f) * MazeLayout.CellSize, 0.22f, (dest.y + 0.5f) * MazeLayout.CellSize);
+                        stand.SetActive(true);
+                    }
+                }
+                ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物 (均已送达)");
             }
-            _replayStands.Clear();
-            _replayStationCells.Clear();
-            _replayDelivered.Clear();
-            ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+            else
+            {
+                foreach (var kvp in _replayStands)
+                {
+                    if (kvp.Value != null)
+                        Destroy(kvp.Value);
+                }
+                _replayStands.Clear();
+                _replayStationCells.Clear();
+                _replayDelivered.Clear();
+                ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+            }
         }
 
         private void InitReplayStands()
@@ -820,11 +839,11 @@ namespace Ethan.CQSeven.RobotSim
                 {
                     var mat = new Material(shader);
                     var role = GetStationRole(station.SlotId);
-                    if (role == "quyuan")
+                    if (role == ProtocolConstants.Roles.QuYuan)
                     {
                         mat.color = new Color(1.0f, 0.65f, 0.15f, 1f);
                     }
-                    else if (role == "zhaojun")
+                    else if (role == ProtocolConstants.Roles.ZhaoJun)
                     {
                         mat.color = new Color(0.2f, 0.88f, 0.6f, 1f);
                     }
@@ -851,11 +870,7 @@ namespace Ethan.CQSeven.RobotSim
 
         private static Vector2Int GetDestinationForRole(string role)
         {
-            if (role.IndexOf("quyuan", StringComparison.OrdinalIgnoreCase) >= 0)
-                return new Vector2Int(8, 8);
-            if (role.IndexOf("zhaojun", StringComparison.OrdinalIgnoreCase) >= 0)
-                return new Vector2Int(7, 7);
-            return new Vector2Int(-1, -1);
+            return MazeLayout.GetDestinationForRole(role);
         }
     }
 
@@ -882,7 +897,7 @@ namespace Ethan.CQSeven.RobotSim
             SlotId = slotId;
             Cell = cell;
             ImagePath = imagePath;
-            State = "waiting";
+            State = ProtocolConstants.SlotStates.Waiting;
         }
     }
 

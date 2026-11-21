@@ -203,7 +203,7 @@ namespace Ethan.CQSeven.RobotSim
             var hasAction = script.actions != null && actionIndex < script.actions.Count;
             var action = hasAction ? script.actions[actionIndex] : null;
             var endPose = new PoseDto { x = request.pose.x, z = request.pose.z, theta = request.pose.theta };
-            if (action == "forward")
+            if (action == ProtocolConstants.Actions.Forward)
             {
                 switch (endPose.theta)
                 {
@@ -213,9 +213,9 @@ namespace Ethan.CQSeven.RobotSim
                     case 270: endPose.x--; break;
                 }
             }
-            else if (action == "turn_left")
+            else if (action == ProtocolConstants.Actions.TurnLeft)
                 endPose.theta = (endPose.theta + 270) % 360;
-            else if (action == "turn_right")
+            else if (action == ProtocolConstants.Actions.TurnRight)
                 endPose.theta = (endPose.theta + 90) % 360;
 
             var slots = checkpoint == null || checkpoint.slots == null
@@ -225,7 +225,7 @@ namespace Ethan.CQSeven.RobotSim
             {
                 SlotDto carriedSlot;
                 if (slots.TryGetValue(checkpoint.carry_slot, out carriedSlot) && carriedSlot != null &&
-                    carriedSlot.state == "carried")
+                    carriedSlot.state == ProtocolConstants.SlotStates.Carried)
                 {
                     carriedSlot.x = request.pose.x;
                     carriedSlot.z = request.pose.z;
@@ -233,7 +233,7 @@ namespace Ethan.CQSeven.RobotSim
             }
             var deliveredCount = 0;
             foreach (var entry in slots)
-                if (entry.Value != null && entry.Value.state == "delivered")
+                if (entry.Value != null && entry.Value.state == ProtocolConstants.SlotStates.Delivered)
                     deliveredCount++;
 
             var decision = checkpoint == null || checkpoint.decision == null
@@ -260,9 +260,9 @@ namespace Ethan.CQSeven.RobotSim
                 plan_path = ToCellPath(trajectoryPoses),
                 decision = decision,
                 done = done,
-                status = done ? "completed" : (hasAction
-                    ? (request.slots != null && request.slots.Count > 0 ? "planning" : "exploring")
-                    : "awaiting_observation"),
+                status = done ? ProtocolConstants.PlannerStatuses.Completed : (hasAction
+                    ? (request.slots != null && request.slots.Count > 0 ? ProtocolConstants.PlannerStatuses.Planning : ProtocolConstants.PlannerStatuses.Exploring)
+                    : ProtocolConstants.PlannerStatuses.AwaitingObservation),
                 remaining_tasks = 2 - deliveredCount,
                 trajectory = new TrajectoryDto
                 {

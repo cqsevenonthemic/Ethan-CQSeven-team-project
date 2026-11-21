@@ -14,10 +14,14 @@ namespace Ethan.CQSeven.RobotSim
         internal const float CellSize = 1.0f;
         internal static readonly Vector2Int StartCell = new Vector2Int(0, 0);
         internal const int DestinationCount = 2;
+
+        public static readonly Vector2Int QuYuanDestination = new Vector2Int(8, 8);
+        public static readonly Vector2Int ZhaoJunDestination = new Vector2Int(7, 7);
+
         private static readonly Vector2Int[] Destinations =
         {
-            new Vector2Int(8, 8),
-            new Vector2Int(7, 7)
+            QuYuanDestination,
+            ZhaoJunDestination
         };
 
         internal static Vector2Int GetDestination(int index)
@@ -25,6 +29,37 @@ namespace Ethan.CQSeven.RobotSim
             if (index < 0 || index >= Destinations.Length)
                 throw new ArgumentOutOfRangeException(nameof(index));
             return Destinations[index];
+        }
+
+        public static Vector2Int GetDestinationForRole(string role)
+        {
+            if (string.IsNullOrEmpty(role))
+                return new Vector2Int(-1, -1);
+            if (role.IndexOf(ProtocolConstants.Roles.QuYuan, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                role.IndexOf("屈原", StringComparison.OrdinalIgnoreCase) >= 0)
+                return QuYuanDestination;
+            if (role.IndexOf(ProtocolConstants.Roles.ZhaoJun, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                role.IndexOf("昭君", StringComparison.OrdinalIgnoreCase) >= 0)
+                return ZhaoJunDestination;
+            return new Vector2Int(-1, -1);
+        }
+
+        public static string FormatCellCoord(Vector2Int cell)
+        {
+            return cell.x + "," + cell.y;
+        }
+
+        public static string GetDestinationDisplayName(string role)
+        {
+            if (string.IsNullOrEmpty(role))
+                return string.Empty;
+            if (role.IndexOf(ProtocolConstants.Roles.QuYuan, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                role.IndexOf("屈原", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "楚国 (" + FormatCellCoord(QuYuanDestination) + ")";
+            if (role.IndexOf(ProtocolConstants.Roles.ZhaoJun, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                role.IndexOf("昭君", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "西汉 (" + FormatCellCoord(ZhaoJunDestination) + ")";
+            return string.Empty;
         }
 
         // Literal four-bit wall masks (N=1, E=2, S=4, W=8). Fixed for every run.

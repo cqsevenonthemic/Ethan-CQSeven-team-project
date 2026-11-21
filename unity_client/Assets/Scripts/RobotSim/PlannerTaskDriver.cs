@@ -288,8 +288,8 @@ namespace Ethan.CQSeven.RobotSim
 
             switch (result.Value.status)
             {
-                case "planning":
-                case "exploring":
+                case ProtocolConstants.PlannerStatuses.Planning:
+                case ProtocolConstants.PlannerStatuses.Exploring:
                     if (_lastExecutedGeneration == requestGeneration)
                     {
                         StopWithError("A response attempted to execute the same snapshot action more than once.");
@@ -300,7 +300,7 @@ namespace Ethan.CQSeven.RobotSim
                         StopWithError("RobotController rejected the planner action; no action was retried.");
                     yield break;
 
-                case "awaiting_delivery":
+                case ProtocolConstants.PlannerStatuses.AwaitingDelivery:
                     if (!stateMachine.ValidateCurrentDelivery())
                     {
                         StopWithError("Planner is awaiting delivery, but Unity could not validate a destination.");
@@ -310,19 +310,19 @@ namespace Ethan.CQSeven.RobotSim
                     TryRequestNextAction();
                     yield break;
 
-                case "awaiting_observation":
+                case ProtocolConstants.PlannerStatuses.AwaitingObservation:
                     _awaitingInformation = true;
                     _awaitingInformationFingerprint = BuildObservationFingerprint();
                     SetStatus("Planner is waiting for new sensor information; no action or step was executed.");
                     yield break;
 
-                case "unreachable":
+                case ProtocolConstants.PlannerStatuses.Unreachable:
                     _stopped = true;
                     SetStatus("Known reachable area has no remaining task route or observation frontier.");
                     Debug.LogWarning("Planner task stopped as unreachable after " + robot.TotalStepCount + " actions.", this);
                     yield break;
 
-                case "completed":
+                case ProtocolConstants.PlannerStatuses.Completed:
                     _stopped = true;
                     SetStatus("Both state machines were verified at their correct destinations.");
                     Debug.Log("Planner task completed after " + robot.TotalStepCount + " actions.", this);
@@ -437,6 +437,22 @@ namespace Ethan.CQSeven.RobotSim
                 }
             }
 
+            // Live mode: strictly require valid trajectory and poses.Count == actions.Count + 1
+            if (isLive)
+            {
+                var posesCount = (optimalRecord != null && optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null)
+                    ? optimalRecord.trajectory.poses.Count
+                    : 0;
+                var expectedCount = actions.Count + 1;
+                if (posesCount != expectedCount)
+                {
+                    _lastReplayFailed = true;
+                    Debug.LogError("[Replay Failed] Live mode trajectory poses count mismatch: expected " + expectedCount + " (actions.Count + 1), but got " + posesCount);
+                    SetStatus("复盘失败: 轨迹位姿数量(" + posesCount + ")与动作序列期望(" + expectedCount + ")不匹配");
+                    yield break;
+                }
+            }
+
             var startPose = stateMachine != null ? stateMachine.InitialPose : new RobotPose(new Vector2Int(0, 0), RobotHeading.North);
             List<PoseDto> expectedPoses = null;
             var switchSteps = new HashSet<int>();
@@ -462,36 +478,39 @@ namespace Ethan.CQSeven.RobotSim
             if (stateMachine != null)
             {
                 stateMachine.BeginReplayStationVisuals();
-                stateMachine.StepReplayStationVisuals(startPose.Cell, switchSteps.Contains(0));
+                stateMachine.StepReplayStationVisuals(startPose.Cell, false);
             }
             yield return new WaitForSeconds(0.4f);
 
             for (var i = 0; i < actions.Count; i++)
             {
                 var action = actions[i];
+                var stepNumber = i + 1;
+                var isSwitchBeforeAction = switchSteps.Contains(stepNumber);
 
-                if (switchSteps.Contains(i) || switchSteps.Contains(i + 1))
+                if (isSwitchBeforeAction)
                 {
-                    SetStatus("Act 3 复盘: 动作 #" + (i + 1) + " [" + action + "] (触发站点拾取/换人/派送)...");
+                    if (stateMachine != null)
+                    {
+                        stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, true);
+                    }
+                    SetStatus("第三幕复盘: 第 " + stepNumber + " 步执行前触发原地换人...");
+                }
+                else
+                {
+                    SetStatus("Act 3 复盘: 动作 #" + stepNumber + " [" + action + "]...");
                 }
 
                 if (!TryExecuteFirstAction(action))
                 {
                     Debug.LogError("[Replay Blocked/Failed] Step " + i + ": action '" + action + "' blocked by wall or failed at pose " + robot.CurrentPose);
-                    SetStatus("复盘失败: 第 " + (i + 1) + " 步动作 '" + action + "' 遇阻碰墙!");
+                    SetStatus("复盘失败: 第 " + stepNumber + " 步动作 '" + action + "' 遇阻碰墙!");
                     _lastReplayFailed = true;
                     break;
                 }
 
                 while (robot.IsActionInProgress)
                     yield return null;
-
-                // Step station visuals at new pose
-                if (stateMachine != null)
-                {
-                    var isSwitch = switchSteps.Contains(i) || switchSteps.Contains(i + 1);
-                    stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, isSwitch);
-                }
 
                 // Pose verification against expected trajectory
                 if (expectedPoses != null && (i + 1) < expectedPoses.Count)
@@ -500,11 +519,17 @@ namespace Ethan.CQSeven.RobotSim
                     var cur = robot.CurrentPose;
                     if (cur.Cell.x != exp.x || cur.Cell.y != exp.z || cur.HeadingDegrees != exp.theta)
                     {
-                        Debug.LogError("[Replay Pose Mismatch] Step " + (i + 1) + ": expected (" + exp.x + ", " + exp.z + ", " + exp.theta + "°), got (" + cur.Cell.x + ", " + cur.Cell.y + ", " + cur.HeadingDegrees + "°)");
-                        SetStatus("复盘位姿校验失败: 步骤 " + (i + 1) + " 实际位姿 (" + cur.Cell.x + "," + cur.Cell.y + "," + cur.HeadingDegrees + "°) 与预期 (" + exp.x + "," + exp.z + "," + exp.theta + "°) 不符！");
+                        Debug.LogError("[Replay Pose Mismatch] Step " + stepNumber + ": expected (" + exp.x + ", " + exp.z + ", " + exp.theta + "°), got (" + cur.Cell.x + ", " + cur.Cell.y + ", " + cur.HeadingDegrees + "°)");
+                        SetStatus("复盘位姿校验失败: 步骤 " + stepNumber + " 实际位姿 (" + cur.Cell.x + "," + cur.Cell.y + "," + cur.HeadingDegrees + "°) 与预期 (" + exp.x + "," + exp.z + "," + exp.theta + "°) 不符！");
                         _lastReplayFailed = true;
                         break;
                     }
+                }
+
+                // Step station visuals at new pose (empty-handed pickup or destination delivery)
+                if (stateMachine != null)
+                {
+                    stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, false);
                 }
             }
 
@@ -516,7 +541,7 @@ namespace Ethan.CQSeven.RobotSim
 
             if (stateMachine != null)
             {
-                stateMachine.EndReplayStationVisuals();
+                stateMachine.EndReplayStationVisuals(!_lastReplayFailed);
             }
 
             robot.ExitReplayMode();
@@ -527,9 +552,9 @@ namespace Ethan.CQSeven.RobotSim
         {
             switch (action)
             {
-                case "forward": return robot.TryExecuteAction(RobotAction.Forward);
-                case "turn_left": return robot.TryExecuteAction(RobotAction.TurnLeft);
-                case "turn_right": return robot.TryExecuteAction(RobotAction.TurnRight);
+                case ProtocolConstants.Actions.Forward: return robot.TryExecuteAction(RobotAction.Forward);
+                case ProtocolConstants.Actions.TurnLeft: return robot.TryExecuteAction(RobotAction.TurnLeft);
+                case ProtocolConstants.Actions.TurnRight: return robot.TryExecuteAction(RobotAction.TurnRight);
                 default: return false;
             }
         }
