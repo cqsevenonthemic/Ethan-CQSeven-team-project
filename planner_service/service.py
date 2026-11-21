@@ -103,11 +103,11 @@ def decide(
         return response(path, "planning", "Shortest unit-cost route on confirmed open edges")
     if request.visited_cells is None:
         return response(Path([start], []), "awaiting_observation", "Search requires caller-owned visited_cells; wall visibility is not search coverage")
-    if goal is not None and (exploration == ExplorationStrategy.CARRIED_TASK
-                             or (exploration == ExplorationStrategy.KNOWN_TASKS and len(slots) == 2)):
-        can_scan_here = (progress.scan_attempts < SCAN_LIMIT
-                         and (request.progress is not None or request.step_count == 0))
-        directed = task_frontier(request, start, goal, allow_local_scan=can_scan_here)
+    if (goal is not None and progress.scan_attempts < SCAN_LIMIT
+            and (request.progress is not None or request.step_count == 0)
+            and (exploration == ExplorationStrategy.CARRIED_TASK
+                 or (exploration == ExplorationStrategy.KNOWN_TASKS and len(slots) == 2))):
+        directed = task_frontier(request, start, goal)
         if directed:
             progress.pending_scan = directed.states[-1][:2] == start[:2]
             return response(directed, "exploring",

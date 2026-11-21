@@ -43,8 +43,7 @@ def _estimated_goal_distances(grid: MapInput, goal: tuple[int, int]) -> dict[tup
     return distance
 
 
-def task_frontier(grid: MapInput, start: State, goal: tuple[int, int], *,
-                  allow_local_scan: bool) -> Path | None:
+def task_frontier(grid: MapInput, start: State, goal: tuple[int, int]) -> Path | None:
     """Find a confirmed path ending at a viewpoint facing an unknown edge."""
     estimated = _estimated_goal_distances(grid, goal)
     queue = deque([start])
@@ -60,8 +59,7 @@ def task_frontier(grid: MapInput, start: State, goal: tuple[int, int], *,
         x, z, theta = current
         dx, dz, bit, _ = DIRECTIONS[theta]
         remaining = estimated.get((x + dx, z + dz))
-        if (cost and remaining is not None and not grid.seen_walls[x][z] & bit
-                and (allow_local_scan or current[:2] != start[:2])):
+        if remaining is not None and not grid.seen_walls[x][z] & bit:
             score = cost + UNKNOWN_EDGE_COST + remaining, cost
             if best is None or score < best:
                 best, viewpoint = score, current
@@ -72,6 +70,11 @@ def task_frontier(grid: MapInput, start: State, goal: tuple[int, int], *,
                 queue.append(target)
     if viewpoint is None:
         return None
+    if viewpoint == start:
+        # The best edge is already in front. Rotate for a new scan if the
+        # previous observation still left it unknown.
+        x, z, theta = start
+        return Path([start, (x, z, (theta - 90) % 360)], ["turn_left"])
     states, actions = [viewpoint], []
     while viewpoint != start:
         viewpoint, action = parents[viewpoint]
