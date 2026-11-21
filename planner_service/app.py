@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from planner_service.planner.task_frontier import ExplorationStrategy
 from planner_service.schemas import (
     ActiveResponse, ErrorResponse, ObserveRequest, RecognizeRequest, RecognizeResponse,
     SummaryRequest, SummaryResponse, TerminalResponse,
@@ -17,6 +18,7 @@ from planner_service.vision.inference import ModelUnavailable, VisionInferenceFa
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Micromouse Planner", version="0.2.0")
+exploration_strategy = ExplorationStrategy(os.getenv("PLANNER_EXPLORATION", "baseline"))
 
 
 def error(status: int, code: str, message: str) -> JSONResponse:
@@ -53,7 +55,7 @@ def health():
           responses={422: {"model": ErrorResponse}, 501: {"model": ErrorResponse},
                      500: {"model": ErrorResponse}})
 def next_action(body: ObserveRequest):
-    return decide(body)
+    return decide(body, exploration=exploration_strategy)
 
 
 @app.post("/recognize", response_model=RecognizeResponse,
