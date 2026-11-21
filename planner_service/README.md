@@ -275,3 +275,27 @@ $dataset = (Resolve-Path '..\P1-real-data\pilot-illustrations-v1').Path
    将阻墙或提前中断计作复盘失败。当前回放只遍历移动动作，完整搬运演示还需消费
    `optimal_episode` 对应的 `switch_steps` 并呈现拾取和交付。
    最优性文案根据 `optimality_proven` 和 `map_scope` 显示，当前 DTO 忽略这些增量字段。
+
+## P3 在线探索实验
+
+`PLANNER_EXPLORATION` 默认是 `baseline`。实验模式 `known_tasks` 只在两个人物均已发现、
+机器人正在携带人物且当前配送点尚无已确认通路时启用。对能经已确认边到达的观测位姿，
+结合到达该位姿的动作数和到配送点的候选连通代价来选观测点。未知边的估计代价为 3，
+已确认通路为 1，已知墙从估计图中排除。返回的前进动作只使用已确认开放的边。
+缺少候选观测点时继续使用原来的覆盖与前沿搜索。普通已确认配送、换人和拒收机制保持原逻辑。
+`carried_task` 是同一排序方法的早启用实验，在第二个人物尚未发现时也可使用。
+
+在仓库根目录启动候选服务时，沿用现有 `PLANNER_ONNX_MODEL` 配置。
+
+```powershell
+$env:PLANNER_EXPLORATION = 'known_tasks'
+.\.venv\Scripts\python.exe -m uvicorn planner_service.app:app --host 127.0.0.1 --port 8000
+```
+
+随机仿真中同一 seed 的各策略共享迷宫、触发点、识别故障注入及传感器规则，
+每条执行轨迹均重新检查。下列命令分别覆盖 100 个配对种子和 50 个独立种子。
+
+```powershell
+.\.venv\Scripts\python.exe -m planner_service.simulation.step_benchmark --start-seed 0 --count 100 --jobs 8 --output planner_service/artifacts/p3/paired.json
+.\.venv\Scripts\python.exe -m planner_service.simulation.step_benchmark --start-seed 1000 --count 50 --jobs 6 --output planner_service/artifacts/p3/holdout.json
+```
