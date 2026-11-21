@@ -60,11 +60,24 @@ namespace Ethan.CQSeven.RobotSim
             if (IsInitialModeResolved)
                 yield break;
 
+            var args = Environment.GetCommandLineArgs();
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "-mock", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetMode(PlannerClientMode.Mock, "Mock mode specified via command-line argument.");
+                    CompleteInitialModeResolution();
+                    yield break;
+                }
+            }
+
             using (var request = UnityWebRequest.Get(ApiBaseUrl + "/openapi.json"))
             {
                 request.timeout = Mathf.Max(1, timeoutSeconds);
                 yield return request.SendWebRequest();
-                if (request.result == UnityWebRequest.Result.ConnectionError && request.responseCode == 0)
+                if ((request.result == UnityWebRequest.Result.ConnectionError && request.responseCode == 0) ||
+                    (request.responseCode >= 502 && request.responseCode <= 504))
                 {
                     SetMode(PlannerClientMode.Mock,
                         "Planner service is unreachable; using the fixed offline Mock fixtures. " + request.error);
@@ -295,9 +308,27 @@ namespace Ethan.CQSeven.RobotSim
             return LoadMockResponse<RecognizeResponseDto>(fileName);
         }
 
+        [SerializeField] private string mockSummaryFixture = "sample_summary.json";
+
+        public string MockSummaryFixture
+        {
+            get { return mockSummaryFixture; }
+            set { mockSummaryFixture = value; }
+        }
+
         private ApiResult<PlanSummaryResponseDto> GetMockSummary()
         {
-            return LoadMockResponse<PlanSummaryResponseDto>("sample_summary.json");
+            var fixture = !string.IsNullOrEmpty(mockSummaryFixture) ? mockSummaryFixture : "sample_summary.json";
+            var args = Environment.GetCommandLineArgs();
+            for (var i = 0; i < args.Length - 1; i++)
+            {
+                if (string.Equals(args[i], "-mockSummary", StringComparison.OrdinalIgnoreCase))
+                {
+                    fixture = args[i + 1];
+                    break;
+                }
+            }
+            return LoadMockResponse<PlanSummaryResponseDto>(fixture);
         }
 
         private ApiResult<T> LoadMockResponse<T>(string fileName)

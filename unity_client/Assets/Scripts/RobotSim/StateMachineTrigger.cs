@@ -41,11 +41,15 @@ namespace Ethan.CQSeven.RobotSim
         public event Action<string> StatusChanged;
         public event Action<bool, string> InitializationCompleted;
         public event Action<string> ReplayCarryStateUpdated;
+        public event Action<ReplayAuditEventDto> ReplayEventLogged;
 
         private string _replayCarrySlot;
         private readonly Dictionary<string, GameObject> _replayStands = new Dictionary<string, GameObject>();
         private readonly Dictionary<string, Vector2Int> _replayStationCells = new Dictionary<string, Vector2Int>();
         private readonly Dictionary<string, bool> _replayDelivered = new Dictionary<string, bool>();
+        private readonly List<ReplayAuditEventDto> _replayAuditEvents = new List<ReplayAuditEventDto>();
+
+        public List<ReplayAuditEventDto> ReplayAuditEvents { get { return _replayAuditEvents; } }
 
         public bool IsReady { get { return _isReady; } }
         public long ObservationSequence { get { return _observationSequence; } }
@@ -677,6 +681,7 @@ namespace Ethan.CQSeven.RobotSim
             _replayCarrySlot = null;
             _replayDelivered.Clear();
             _replayStationCells.Clear();
+            _replayAuditEvents.Clear();
 
             InitReplayStands();
 
@@ -689,7 +694,7 @@ namespace Ethan.CQSeven.RobotSim
 
                 if (_replayStands.TryGetValue(s.SlotId, out var stand) && stand != null)
                 {
-                    stand.transform.position = new Vector3(cell.x + 0.5f, 0.22f, cell.y + 0.5f);
+                    stand.transform.position = new Vector3((cell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (cell.y + 0.5f) * MazeLayout.CellSize);
                     stand.SetActive(true);
                 }
             }
@@ -699,57 +704,38 @@ namespace Ethan.CQSeven.RobotSim
 
         public void StepReplayStationVisuals(Vector2Int currentCell, bool isSwitchStep)
         {
-            // 1. Delivery check
-            if (!string.IsNullOrEmpty(_replayCarrySlot))
-            {
-                var role = GetStationRole(_replayCarrySlot);
-                var dest = GetDestinationForRole(role);
-                if (dest == currentCell)
-                {
-                    var deliveredSlot = _replayCarrySlot;
-                    _replayDelivered[deliveredSlot] = true;
-                    _replayStationCells[deliveredSlot] = currentCell;
-                    if (_replayStands.TryGetValue(deliveredSlot, out var stand) && stand != null)
-                    {
-                        stand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
-                        stand.SetActive(true);
-                    }
-                    _replayCarrySlot = null;
-                }
-            }
+            var pose = robot != null ? robot.CurrentPose : new RobotPose(currentCell, RobotHeading.North);
+            StepReplayStationVisuals(currentCell, isSwitchStep, -1, pose);
+        }
 
-            // 2. Pickup / Switch check
-            string stationAtCell = null;
-            for (var i = 0; i < _stations.Count; i++)
+        public void StepReplayStationVisuals(Vector2Int currentCell, bool isSwitchStep, int stepNumber, RobotPose pose)
+        {
+            if (isSwitchStep)
             {
-                var s = _stations[i];
-                var sId = s.SlotId;
-                if (_replayDelivered.TryGetValue(sId, out var del) && del)
-                    continue;
-                if (_replayCarrySlot == sId)
-                    continue;
-                if (_replayStationCells.TryGetValue(sId, out var sCell) && sCell == currentCell)
+                // Switch requested before action stepNumber
+                string stationAtCell = null;
+                for (var i = 0; i < _stations.Count; i++)
                 {
-                    stationAtCell = sId;
-                    break;
-                }
-            }
-
-            if (stationAtCell != null)
-            {
-                if (string.IsNullOrEmpty(_replayCarrySlot))
-                {
-                    // Pick up
-                    _replayCarrySlot = stationAtCell;
-                    if (_replayStands.TryGetValue(stationAtCell, out var stand) && stand != null)
+                    var s = _stations[i];
+                    var sId = s.SlotId;
+                    if (_replayDelivered.TryGetValue(sId, out var del) && del)
+                        continue;
+                    if (_replayCarrySlot == sId)
+                        continue;
+                    if (_replayStationCells.TryGetValue(sId, out var sCell) && sCell == currentCell)
                     {
-                        stand.SetActive(false);
+                        stationAtCell = sId;
+                        break;
                     }
                 }
-                else if (_replayCarrySlot != stationAtCell && isSwitchStep)
+
+                if (!string.IsNullOrEmpty(_replayCarrySlot) && !string.IsNullOrEmpty(stationAtCell) && _replayCarrySlot != stationAtCell)
                 {
-                    // Swap: drop old stand at currentCell
+                    // Execute swap
                     var oldSlot = _replayCarrySlot;
+                    var oldRole = GetStationRole(oldSlot);
+                    var newRole = GetStationRole(stationAtCell);
+
                     _replayStationCells[oldSlot] = currentCell;
                     if (_replayStands.TryGetValue(oldSlot, out var oldStand) && oldStand != null)
                     {
@@ -761,6 +747,131 @@ namespace Ethan.CQSeven.RobotSim
                     if (_replayStands.TryGetValue(stationAtCell, out var newStand) && newStand != null)
                     {
                         newStand.SetActive(false);
+                    }
+
+                    var switchEvt = CreateAuditEvent("switch", stepNumber, pose, true,
+                        string.Format("Swapped {0} ({1}) for {2} ({3}) at {4} before action {5}.",
+                            oldSlot, oldRole, stationAtCell, newRole, MazeLayout.FormatCellCoord(currentCell), stepNumber), null);
+                    _replayAuditEvents.Add(switchEvt);
+                    ReplayEventLogged?.Invoke(switchEvt);
+                    Debug.Log(string.Format("[Act3 Replay Audit] Step {0} (1-based) | SWITCH | Pose: ({1},{2},{3}°) | Dropped: {4} ({5}) | Picked: {6} ({7}) | Success: True",
+                        stepNumber, pose.Cell.x, pose.Cell.y, pose.HeadingDegrees, oldSlot, oldRole, stationAtCell, newRole));
+
+                    // Immediate delivery check if newly carried figure has currentCell as destination
+                    var dest = GetDestinationForRole(newRole);
+                    if (dest == currentCell)
+                    {
+                        _replayDelivered[stationAtCell] = true;
+                        _replayStationCells[stationAtCell] = currentCell;
+                        if (_replayStands.TryGetValue(stationAtCell, out var dStand) && dStand != null)
+                        {
+                            dStand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
+                            dStand.SetActive(true);
+                        }
+                        _replayCarrySlot = null;
+
+                        var deliverEvt = CreateAuditEvent("deliver", stepNumber, pose, true,
+                            string.Format("Immediately delivered {0} ({1}) to destination {2} upon switch at step {3}.",
+                                stationAtCell, newRole, MazeLayout.FormatCellCoord(dest), stepNumber), null);
+                        _replayAuditEvents.Add(deliverEvt);
+                        ReplayEventLogged?.Invoke(deliverEvt);
+                        Debug.Log(string.Format("[Act3 Replay Audit] Step {0} (1-based) | DELIVER | Pose: ({1},{2},{3}°) | Delivered: {4} ({5}) to {6} | Success: True",
+                            stepNumber, pose.Cell.x, pose.Cell.y, pose.HeadingDegrees, stationAtCell, newRole, MazeLayout.FormatCellCoord(dest)));
+                    }
+                }
+                else
+                {
+                    var errorMsg = string.Format("Switch requested before step {0}, but cannot swap: carry={1}, stationAtCell={2}.",
+                        stepNumber, _replayCarrySlot ?? "none", stationAtCell ?? "none");
+                    var switchFailEvt = CreateAuditEvent("switch", stepNumber, pose, false,
+                        "Switch condition unfulfilled.", errorMsg);
+                    _replayAuditEvents.Add(switchFailEvt);
+                    ReplayEventLogged?.Invoke(switchFailEvt);
+                    Debug.LogWarning("[Act3 Replay Audit] " + errorMsg);
+                }
+            }
+            else
+            {
+                // 1. Delivery check
+                if (!string.IsNullOrEmpty(_replayCarrySlot))
+                {
+                    var role = GetStationRole(_replayCarrySlot);
+                    var dest = GetDestinationForRole(role);
+                    if (dest == currentCell)
+                    {
+                        var deliveredSlot = _replayCarrySlot;
+                        _replayDelivered[deliveredSlot] = true;
+                        _replayStationCells[deliveredSlot] = currentCell;
+                        if (_replayStands.TryGetValue(deliveredSlot, out var stand) && stand != null)
+                        {
+                            stand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
+                            stand.SetActive(true);
+                        }
+                        _replayCarrySlot = null;
+
+                        var deliverEvt = CreateAuditEvent("deliver", stepNumber, pose, true,
+                            string.Format("Delivered {0} ({1}) to destination {2} at step {3}.",
+                                deliveredSlot, role, MazeLayout.FormatCellCoord(dest), stepNumber), null);
+                        _replayAuditEvents.Add(deliverEvt);
+                        ReplayEventLogged?.Invoke(deliverEvt);
+                        Debug.Log(string.Format("[Act3 Replay Audit] Step {0} (1-based) | DELIVER | Pose: ({1},{2},{3}°) | Delivered: {4} ({5}) to {6} | Success: True",
+                            stepNumber, pose.Cell.x, pose.Cell.y, pose.HeadingDegrees, deliveredSlot, role, MazeLayout.FormatCellCoord(dest)));
+                    }
+                }
+
+                // 2. Pickup check
+                if (string.IsNullOrEmpty(_replayCarrySlot))
+                {
+                    string stationAtCell = null;
+                    for (var i = 0; i < _stations.Count; i++)
+                    {
+                        var s = _stations[i];
+                        var sId = s.SlotId;
+                        if (_replayDelivered.TryGetValue(sId, out var del) && del)
+                            continue;
+                        if (_replayStationCells.TryGetValue(sId, out var sCell) && sCell == currentCell)
+                        {
+                            stationAtCell = sId;
+                            break;
+                        }
+                    }
+
+                    if (stationAtCell != null)
+                    {
+                        _replayCarrySlot = stationAtCell;
+                        if (_replayStands.TryGetValue(stationAtCell, out var stand) && stand != null)
+                        {
+                            stand.SetActive(false);
+                        }
+                        var r = GetStationRole(stationAtCell);
+                        var pickupEvt = CreateAuditEvent("pickup", stepNumber, pose, true,
+                            string.Format("Picked up {0} ({1}) at {2} (step {3}).",
+                                stationAtCell, r, MazeLayout.FormatCellCoord(currentCell), stepNumber), null);
+                        _replayAuditEvents.Add(pickupEvt);
+                        ReplayEventLogged?.Invoke(pickupEvt);
+                        Debug.Log(string.Format("[Act3 Replay Audit] Step {0} (1-based) | PICKUP | Pose: ({1},{2},{3}°) | Picked: {4} ({5}) | Success: True",
+                            stepNumber, pose.Cell.x, pose.Cell.y, pose.HeadingDegrees, stationAtCell, r));
+
+                        var dest = GetDestinationForRole(r);
+                        if (dest == currentCell)
+                        {
+                            _replayDelivered[stationAtCell] = true;
+                            _replayStationCells[stationAtCell] = currentCell;
+                            if (_replayStands.TryGetValue(stationAtCell, out var dStand) && dStand != null)
+                            {
+                                dStand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
+                                dStand.SetActive(true);
+                            }
+                            _replayCarrySlot = null;
+
+                            var deliverEvt = CreateAuditEvent("deliver", stepNumber, pose, true,
+                                string.Format("Immediately delivered {0} ({1}) to destination {2} at step {3}.",
+                                    stationAtCell, r, MazeLayout.FormatCellCoord(dest), stepNumber), null);
+                            _replayAuditEvents.Add(deliverEvt);
+                            ReplayEventLogged?.Invoke(deliverEvt);
+                            Debug.Log(string.Format("[Act3 Replay Audit] Step {0} (1-based) | DELIVER | Pose: ({1},{2},{3}°) | Delivered: {4} ({5}) to {6} | Success: True",
+                                stepNumber, pose.Cell.x, pose.Cell.y, pose.HeadingDegrees, stationAtCell, r, MazeLayout.FormatCellCoord(dest)));
+                        }
                     }
                 }
             }
@@ -777,6 +888,100 @@ namespace Ethan.CQSeven.RobotSim
             {
                 ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
             }
+        }
+
+        public bool ValidateAllStationsDelivered(out string failureReason)
+        {
+            failureReason = null;
+            if (_stations == null || _stations.Count == 0)
+            {
+                failureReason = "No station configuration loaded in StateMachineTrigger.";
+                return false;
+            }
+
+            var undeliveredList = new List<string>();
+            for (var i = 0; i < _stations.Count; i++)
+            {
+                var s = _stations[i];
+                var slotId = s.SlotId;
+                if (!_replayDelivered.TryGetValue(slotId, out var delivered) || !delivered)
+                {
+                    var role = GetStationRole(slotId);
+                    var roleName = ProtocolConstants.Roles.ToDisplayName(role, slotId);
+                    var dest = GetDestinationForRole(role);
+                    undeliveredList.Add(string.Format("{0} (Slot: {1}, Target: {2})", roleName, slotId, MazeLayout.FormatCellCoord(dest)));
+                }
+            }
+
+            if (undeliveredList.Count > 0)
+            {
+                var carriedInfo = string.IsNullOrEmpty(_replayCarrySlot)
+                    ? "Robot is empty-handed"
+                    : string.Format("Robot is still carrying {0} (Slot: {1})",
+                        ProtocolConstants.Roles.ToDisplayName(GetStationRole(_replayCarrySlot), _replayCarrySlot),
+                        _replayCarrySlot);
+                failureReason = string.Format("Undelivered figures: [{0}]. Current carry state: {1}",
+                    string.Join(", ", undeliveredList), carriedInfo);
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(_replayCarrySlot))
+            {
+                var role = GetStationRole(_replayCarrySlot);
+                failureReason = string.Format("Both figures marked delivered, but robot is still carrying {0} (Slot: {1}).",
+                    ProtocolConstants.Roles.ToDisplayName(role, _replayCarrySlot), _replayCarrySlot);
+                return false;
+            }
+
+            return true;
+        }
+
+        private ReplayAuditPoseDto BuildPoseDto(RobotPose pose)
+        {
+            return new ReplayAuditPoseDto
+            {
+                cell = new[] { pose.Cell.x, pose.Cell.y },
+                world_position = new[] { (pose.Cell.x + 0.5f) * MazeLayout.CellSize, 0f, (pose.Cell.y + 0.5f) * MazeLayout.CellSize },
+                heading = pose.Heading.ToString(),
+                heading_degrees = pose.HeadingDegrees
+            };
+        }
+
+        private ReplayAuditStateDto BuildStateDto(bool isSuccess, string error)
+        {
+            var stationCellsCopy = new Dictionary<string, int[]>();
+            foreach (var kvp in _replayStationCells)
+                stationCellsCopy[kvp.Key] = new[] { kvp.Value.x, kvp.Value.y };
+
+            var deliveredCopy = new Dictionary<string, bool>(_replayDelivered);
+            var carriedRole = !string.IsNullOrEmpty(_replayCarrySlot) ? GetStationRole(_replayCarrySlot) : null;
+            var targetName = !string.IsNullOrEmpty(carriedRole) ? MazeLayout.GetDestinationDisplayName(carriedRole) : "None";
+
+            return new ReplayAuditStateDto
+            {
+                carried_slot = _replayCarrySlot,
+                carried_role = carriedRole,
+                target_character = targetName,
+                station_cells = stationCellsCopy,
+                delivered_status = deliveredCopy,
+                is_success = isSuccess,
+                rejection_or_error = error
+            };
+        }
+
+        private ReplayAuditEventDto CreateAuditEvent(string eventType, int stepNumber, RobotPose pose, bool isSuccess, string details, string error)
+        {
+            return new ReplayAuditEventDto
+            {
+                event_type = eventType,
+                step_index = stepNumber,
+                step_index_0based = stepNumber > 0 ? stepNumber - 1 : -1,
+                step_index_basis = "1-based action step (0 indicates pre-action initial state)",
+                timestamp = DateTime.Now.ToString("HH:mm:ss.fff"),
+                details = details,
+                pose = BuildPoseDto(pose),
+                state = BuildStateDto(isSuccess, error)
+            };
         }
 
         public void EndReplayStationVisuals(bool replaySuccess = true)
@@ -808,7 +1013,7 @@ namespace Ethan.CQSeven.RobotSim
                 _replayStands.Clear();
                 _replayStationCells.Clear();
                 _replayDelivered.Clear();
-                ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物");
+                ReplayCarryStateUpdated?.Invoke("复盘携带: 未携带人物 (复盘未通过)");
             }
         }
 

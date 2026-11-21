@@ -177,6 +177,54 @@ namespace Ethan.CQSeven.RobotSim
         [JsonProperty("exact_steps")] public int? exact_steps;
         [JsonProperty("map_scope")] public string map_scope;
         [JsonProperty("optimality_proven")] public bool optimality_proven;
+        [JsonProperty("switch_steps")] public List<int> switch_steps;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
+    public sealed class ReplayAuditPoseDto
+    {
+        [JsonProperty("cell")] public int[] cell;
+        [JsonProperty("world_position")] public float[] world_position;
+        [JsonProperty("heading")] public string heading;
+        [JsonProperty("heading_degrees")] public float heading_degrees;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
+    public sealed class ReplayAuditStateDto
+    {
+        [JsonProperty("carried_slot")] public string carried_slot;
+        [JsonProperty("carried_role")] public string carried_role;
+        [JsonProperty("target_character")] public string target_character;
+        [JsonProperty("station_cells")] public Dictionary<string, int[]> station_cells;
+        [JsonProperty("delivered_status")] public Dictionary<string, bool> delivered_status;
+        [JsonProperty("is_success")] public bool is_success;
+        [JsonProperty("rejection_or_error")] public string rejection_or_error;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
+    public sealed class ReplayAuditEventDto
+    {
+        [JsonProperty("event_type")] public string event_type;
+        [JsonProperty("step_index")] public int step_index;
+        [JsonProperty("step_index_0based")] public int step_index_0based;
+        [JsonProperty("step_index_basis")] public string step_index_basis = "1-based action step";
+        [JsonProperty("timestamp")] public string timestamp;
+        [JsonProperty("details")] public string details;
+        [JsonProperty("pose")] public ReplayAuditPoseDto pose;
+        [JsonProperty("state")] public ReplayAuditStateDto state;
+    }
+
+    [JsonObject(MemberSerialization.OptIn)]
+    public sealed class ReplayAuditReportDto
+    {
+        [JsonProperty("report_time")] public string report_time;
+        [JsonProperty("mode")] public string mode;
+        [JsonProperty("total_actions")] public int total_actions;
+        [JsonProperty("switch_steps_configured")] public List<int> switch_steps_configured;
+        [JsonProperty("all_delivered")] public bool all_delivered;
+        [JsonProperty("passed")] public bool passed;
+        [JsonProperty("failure_reason")] public string failure_reason;
+        [JsonProperty("events")] public List<ReplayAuditEventDto> events;
     }
 
     public sealed class ApiResult<T>

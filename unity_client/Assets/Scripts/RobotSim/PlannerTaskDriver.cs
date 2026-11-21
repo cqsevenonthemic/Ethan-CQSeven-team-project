@@ -1,7 +1,9 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
+using Newtonsoft.Json;
 using UnityEngine;
 
 namespace Ethan.CQSeven.RobotSim
@@ -112,6 +114,12 @@ namespace Ethan.CQSeven.RobotSim
             stateMachine.RecognitionCompleted += OnRecognitionCompleted;
             stateMachine.DeliveryValidated += OnDeliveryValidated;
             _initialized = true;
+            var args = Environment.GetCommandLineArgs();
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase))
+                    return; // Skip Act 1 automation when regression test is running
+            }
             lidar.Scan();
         }
 
@@ -393,7 +401,7 @@ namespace Ethan.CQSeven.RobotSim
             SetStatus("Three-act demonstration completed successfully!");
         }
 
-        private IEnumerator RunReplayWorkflow(PlanSummaryResponseDto summary)
+        public IEnumerator RunReplayWorkflow(PlanSummaryResponseDto summary)
         {
             _lastReplayFailed = false;
             if (summary == null || summary.optimal_actions == null || summary.optimal_actions.Count == 0 || robot == null)
@@ -472,13 +480,18 @@ namespace Ethan.CQSeven.RobotSim
                     startPose = new RobotPose(new Vector2Int(firstPose.x, firstPose.z), RobotPose.HeadingFromDegrees(firstPose.theta));
                 }
             }
+            else if (summary.switch_steps != null)
+            {
+                for (var s = 0; s < summary.switch_steps.Count; s++)
+                    switchSteps.Add(summary.switch_steps[s]);
+            }
 
             stateMachine.IsReplayMode = true;
             robot.EnterReplayMode(startPose);
             if (stateMachine != null)
             {
                 stateMachine.BeginReplayStationVisuals();
-                stateMachine.StepReplayStationVisuals(startPose.Cell, false);
+                stateMachine.StepReplayStationVisuals(startPose.Cell, false, 0, startPose);
             }
             yield return new WaitForSeconds(0.4f);
 
@@ -492,9 +505,10 @@ namespace Ethan.CQSeven.RobotSim
                 {
                     if (stateMachine != null)
                     {
-                        stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, true);
+                        stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, true, stepNumber, robot.CurrentPose);
                     }
                     SetStatus("第三幕复盘: 第 " + stepNumber + " 步执行前触发原地换人...");
+                    yield return new WaitForSeconds(0.15f);
                 }
                 else
                 {
@@ -529,15 +543,37 @@ namespace Ethan.CQSeven.RobotSim
                 // Step station visuals at new pose (empty-handed pickup or destination delivery)
                 if (stateMachine != null)
                 {
-                    stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, false);
+                    stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, false, stepNumber, robot.CurrentPose);
                 }
             }
 
+            string deliveryFailReason = null;
             if (!_lastReplayFailed)
             {
-                SetStatus("Act 3: Optimal trajectory replay completed successfully!");
-                yield return new WaitForSeconds(0.5f);
+                // Strict Delivery Verification
+                if (stateMachine != null)
+                {
+                    if (!stateMachine.ValidateAllStationsDelivered(out deliveryFailReason))
+                    {
+                        _lastReplayFailed = true;
+                        Debug.LogError("[Act3 Replay Audit] ❌ Strict delivery verification FAILED: " + deliveryFailReason);
+                        SetStatus("复盘失败: 交付校验未通过 - " + deliveryFailReason);
+                    }
+                    else
+                    {
+                        Debug.Log("[Act3 Replay Audit] ✅ Strict delivery verification PASSED: Both characters delivered successfully.");
+                        SetStatus("Act 3: Optimal trajectory replay completed successfully!");
+                        yield return new WaitForSeconds(0.5f);
+                    }
+                }
+                else
+                {
+                    SetStatus("Act 3: Optimal trajectory replay completed successfully!");
+                    yield return new WaitForSeconds(0.5f);
+                }
             }
+
+            SaveReplayAuditReport(summary, !_lastReplayFailed, deliveryFailReason);
 
             if (stateMachine != null)
             {
@@ -546,6 +582,75 @@ namespace Ethan.CQSeven.RobotSim
 
             robot.ExitReplayMode();
             stateMachine.IsReplayMode = false;
+        }
+
+        public Coroutine StartReplay(PlanSummaryResponseDto summary)
+        {
+            return StartCoroutine(RunReplayWorkflow(summary));
+        }
+
+        private void SaveReplayAuditReport(PlanSummaryResponseDto summary, bool passed, string failureReason)
+        {
+            try
+            {
+                var configuredSwitches = new List<int>();
+                if (summary != null)
+                {
+                    if (summary.switch_steps != null)
+                        configuredSwitches.AddRange(summary.switch_steps);
+                    else if (summary.episode_records != null)
+                    {
+                        for (var i = 0; i < summary.episode_records.Count; i++)
+                        {
+                            if (summary.episode_records[i].episode == summary.optimal_episode && summary.episode_records[i].switch_steps != null)
+                            {
+                                configuredSwitches.AddRange(summary.episode_records[i].switch_steps);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                var report = new ReplayAuditReportDto
+                {
+                    report_time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    mode = (plannerClient != null && plannerClient.Mode == PlannerClientMode.Live) ? "Live" : "Mock",
+                    total_actions = summary != null && summary.optimal_actions != null ? summary.optimal_actions.Count : 0,
+                    switch_steps_configured = configuredSwitches,
+                    all_delivered = passed,
+                    passed = passed,
+                    failure_reason = failureReason,
+                    events = stateMachine != null ? stateMachine.ReplayAuditEvents : new List<ReplayAuditEventDto>()
+                };
+
+                var json = JsonConvert.SerializeObject(report, Formatting.Indented);
+
+                var mockPath = Path.Combine(Application.streamingAssetsPath, "Mock", "latest_replay_audit.json");
+                try
+                {
+                    File.WriteAllText(mockPath, json, Encoding.UTF8);
+                    Debug.Log("[Act3 Replay Audit] Audit report written to: " + mockPath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Act3 Replay Audit] Could not write to StreamingAssets: " + ex.Message);
+                }
+
+                var persistentPath = Path.Combine(Application.persistentDataPath, "latest_replay_audit.json");
+                try
+                {
+                    File.WriteAllText(persistentPath, json, Encoding.UTF8);
+                    Debug.Log("[Act3 Replay Audit] Audit report written to persistentDataPath: " + persistentPath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Act3 Replay Audit] Could not write to persistentDataPath: " + ex.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[Act3 Replay Audit] Failed to generate/save audit report: " + ex.Message);
+            }
         }
 
         private bool TryExecuteFirstAction(string action)
