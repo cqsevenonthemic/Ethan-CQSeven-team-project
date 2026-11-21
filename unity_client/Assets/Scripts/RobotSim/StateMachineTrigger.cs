@@ -711,7 +711,7 @@ namespace Ethan.CQSeven.RobotSim
                     _replayStationCells[deliveredSlot] = currentCell;
                     if (_replayStands.TryGetValue(deliveredSlot, out var stand) && stand != null)
                     {
-                        stand.transform.position = new Vector3(currentCell.x + 0.5f, 0.22f, currentCell.y + 0.5f);
+                        stand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
                         stand.SetActive(true);
                     }
                     _replayCarrySlot = null;
@@ -753,7 +753,7 @@ namespace Ethan.CQSeven.RobotSim
                     _replayStationCells[oldSlot] = currentCell;
                     if (_replayStands.TryGetValue(oldSlot, out var oldStand) && oldStand != null)
                     {
-                        oldStand.transform.position = new Vector3(currentCell.x + 0.5f, 0.22f, currentCell.y + 0.5f);
+                        oldStand.transform.position = new Vector3((currentCell.x + 0.5f) * MazeLayout.CellSize, 0.22f, (currentCell.y + 0.5f) * MazeLayout.CellSize);
                         oldStand.SetActive(true);
                     }
 
@@ -784,7 +784,7 @@ namespace Ethan.CQSeven.RobotSim
             _replayCarrySlot = null;
             if (replaySuccess)
             {
-                // Ensure both stands remain active and clearly displayed at their destinations (8,8) and (7,7)
+                // Ensure both stands remain active and clearly displayed at their destinations
                 for (var i = 0; i < _stations.Count; i++)
                 {
                     var s = _stations[i];
