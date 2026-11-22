@@ -117,7 +117,8 @@ namespace Ethan.CQSeven.RobotSim
             var args = Environment.GetCommandLineArgs();
             for (var i = 0; i < args.Length; i++)
             {
-                if (string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(args[i], "-runDeliveryTest", StringComparison.OrdinalIgnoreCase))
                     return; // Skip Act 1 automation when regression test is running
             }
             lidar.Scan();

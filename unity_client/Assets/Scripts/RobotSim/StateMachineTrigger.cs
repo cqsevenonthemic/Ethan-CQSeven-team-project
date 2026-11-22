@@ -564,6 +564,12 @@ namespace Ethan.CQSeven.RobotSim
                 return;
 
             var destinationRole = cell == robot.Map.FirstDestination ? ProtocolConstants.Roles.QuYuan : ProtocolConstants.Roles.ZhaoJun;
+
+            // Only validate when this destination belongs to the carried figure's PREDICTED role.
+            // Passing through the other figure's destination is ordinary transit: no delivery, no rejection.
+            if (!string.Equals(station.PredictedRole, destinationRole, StringComparison.OrdinalIgnoreCase))
+                return;
+
             var truthRole = _truthRoles[station.SlotId];
             var accepted = truthRole == destinationRole;
             if (accepted)

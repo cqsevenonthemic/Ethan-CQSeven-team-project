@@ -64,7 +64,8 @@ namespace Ethan.CQSeven.RobotSim
             for (var i = 0; i < args.Length; i++)
             {
                 if (string.Equals(args[i], "-mock", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(args[i], "-runDeliveryTest", StringComparison.OrdinalIgnoreCase))
                 {
                     SetMode(PlannerClientMode.Mock, "Mock mode specified via command-line argument.");
                     CompleteInitialModeResolution();
