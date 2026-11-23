@@ -1,0 +1,353 @@
+{
+  "fixture_only": true,
+  "finish_when_actions_end": true,
+  "actions": [
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_right",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "forward",
+    "turn_left",
+    "forward",
+    "forward",
+    "turn_right",
+    "forward",
+    "turn_left",
+    "forward"
+  ],
+  "checkpoints": [
+    {
+      "action_index": 0,
+      "carry_slot": null,
+      "slots": {},
+      "plan_path": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ]
+    },
+    {
+      "action_index": 1,
+      "carry_slot": "s1",
+      "slots": {
+        "s1": {
+          "x": 0,
+          "z": 1,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "carried"
+        }
+      },
+      "plan_path": [
+        [
+          0,
+          1
+        ],
+        [
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "action_index": 2,
+      "carry_slot": "s2",
+      "slots": {
+        "s1": {
+          "x": 0,
+          "z": 2,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "waiting"
+        },
+        "s2": {
+          "x": 0,
+          "z": 2,
+          "pred_role": "zhaojun",
+          "verified": false,
+          "state": "carried"
+        }
+      },
+      "plan_path": [
+        [
+          0,
+          2
+        ],
+        [
+          7,
+          7
+        ]
+      ],
+      "decision": {
+        "switched": true,
+        "cost_keep": 131,
+        "cost_switch": 121,
+        "reason": "Mock fixture: switch at (0,2), deliver s2 to (7,7), then return for s1."
+      }
+    },
+    {
+      "action_index": 62,
+      "carry_slot": null,
+      "slots": {
+        "s1": {
+          "x": 0,
+          "z": 2,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "waiting"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          7,
+          7
+        ],
+        [
+          0,
+          2
+        ]
+      ]
+    },
+    {
+      "action_index": 123,
+      "carry_slot": "s1",
+      "slots": {
+        "s1": {
+          "x": 0,
+          "z": 2,
+          "pred_role": "quyuan",
+          "verified": false,
+          "state": "carried"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          0,
+          2
+        ],
+        [
+          8,
+          8
+        ]
+      ]
+    },
+    {
+      "action_index": 185,
+      "carry_slot": null,
+      "slots": {
+        "s1": {
+          "x": 8,
+          "z": 8,
+          "pred_role": "quyuan",
+          "verified": true,
+          "state": "delivered"
+        },
+        "s2": {
+          "x": 7,
+          "z": 7,
+          "pred_role": "zhaojun",
+          "verified": true,
+          "state": "delivered"
+        }
+      },
+      "plan_path": [
+        [
+          8,
+          8
+        ]
+      ]
+    }
+  ]
+}

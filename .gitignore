@@ -29,6 +29,7 @@ htmlcov/
 
 # Local evaluation data (keep the example template tracked)
 unity_client/Assets/StreamingAssets/eval.json
+unity_client/Assets/StreamingAssets/eval.json.meta
 
 # Common OS/editor noise
 .DS_Store

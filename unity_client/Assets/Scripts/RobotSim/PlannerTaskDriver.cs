@@ -1,0 +1,718 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using Newtonsoft.Json;
+using UnityEngine;
+
+namespace Ethan.CQSeven.RobotSim
+{
+    public enum DemoAct
+    {
+        Act1_OnlineMission,
+        Act2_RlExploration,
+        Act3_OptimalReplay,
+        Completed
+    }
+
+    /// <summary>Executes one planner action from a single immutable Unity snapshot at a time.</summary>
+    public sealed class PlannerTaskDriver : MonoBehaviour
+    {
+        [SerializeField] private RobotController robot;
+        [SerializeField] private LidarSimulator lidar;
+        [SerializeField] private PlannerHttpClient plannerClient;
+        [SerializeField] private StateMachineTrigger stateMachine;
+        [SerializeField] private TrajectoryVisualizer visualizer;
+
+        private PlannerProgressDto _progress;
+        private string _lastObservationFingerprint;
+        private string _awaitingInformationFingerprint;
+        private long _observationSequence;
+        private long _snapshotGeneration;
+        private long _lastExecutedGeneration = -1;
+        private bool _initialized;
+        private bool _requestInFlight;
+        private bool _stopped;
+        private bool _awaitingInformation;
+        private bool _postActionScanPending;
+        private DemoAct _currentAct = DemoAct.Act1_OnlineMission;
+        private bool _lastReplayFailed;
+
+        public event Action<TrajectoryDto> PlannerTrajectoryPreviewChanged;
+        public event Action<RobotPose[]> ActualPathChanged;
+        public event Action<string> StatusChanged;
+        public event Action<DemoAct> ActChanged;
+        public event Action<PlannerDecisionDto, RobotPose> DecisionEvaluated;
+        public event Action<int, int, int, int> RlProgressUpdated;
+        public event Action<PlanSummaryResponseDto> PlanSummaryLoaded;
+
+        public DemoAct CurrentAct { get { return _currentAct; } }
+        public bool RequestInFlight { get { return _requestInFlight; } }
+        public bool IsStopped { get { return _stopped; } }
+        public long ObservationSequence { get { return _observationSequence; } }
+        public TrajectoryVisualizer Visualizer { get { return visualizer; } }
+        public PlannerHttpClient PlannerClient { get { return plannerClient; } }
+
+        private void Start()
+        {
+            if (robot == null)
+                robot = FindFirstObjectByType<RobotController>();
+            if (lidar == null)
+                lidar = FindFirstObjectByType<LidarSimulator>();
+            if (plannerClient == null)
+                plannerClient = FindFirstObjectByType<PlannerHttpClient>();
+            if (stateMachine == null)
+                stateMachine = FindFirstObjectByType<StateMachineTrigger>();
+            if (visualizer == null)
+                visualizer = FindFirstObjectByType<TrajectoryVisualizer>();
+
+            if (robot == null || lidar == null || plannerClient == null || stateMachine == null)
+            {
+                StopWithError("PlannerTaskDriver requires RobotController, LidarSimulator, PlannerHttpClient, and StateMachineTrigger.");
+                return;
+            }
+
+            stateMachine.InitializationCompleted += OnInitializationCompleted;
+            if (stateMachine.IsReady)
+                OnInitializationCompleted(true, stateMachine.StatusMessage);
+            else if (!string.IsNullOrEmpty(stateMachine.ErrorMessage))
+                StopWithError(stateMachine.ErrorMessage);
+        }
+
+        private void OnDestroy()
+        {
+            if (stateMachine != null)
+            {
+                stateMachine.InitializationCompleted -= OnInitializationCompleted;
+                stateMachine.RecognitionCompleted -= OnRecognitionCompleted;
+                stateMachine.DeliveryValidated -= OnDeliveryValidated;
+            }
+            if (_initialized)
+            {
+                robot.PoseChanged -= OnPoseChanged;
+                robot.ActionStarted -= OnActionStarted;
+                robot.ActionCompleted -= OnActionCompleted;
+                lidar.ScanCompleted -= OnScanCompleted;
+            }
+        }
+
+        private void OnInitializationCompleted(bool succeeded, string message)
+        {
+            if (!succeeded)
+            {
+                StopWithError(message);
+                return;
+            }
+            if (_initialized)
+                return;
+
+            robot.PoseChanged += OnPoseChanged;
+            robot.ActionStarted += OnActionStarted;
+            robot.ActionCompleted += OnActionCompleted;
+            lidar.ScanCompleted += OnScanCompleted;
+            stateMachine.RecognitionCompleted += OnRecognitionCompleted;
+            stateMachine.DeliveryValidated += OnDeliveryValidated;
+            _initialized = true;
+            var args = Environment.GetCommandLineArgs();
+            for (var i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "-runReplayTest", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(args[i], "-runDeliveryTest", StringComparison.OrdinalIgnoreCase))
+                    return; // Skip Act 1 automation when regression test is running
+            }
+            lidar.Scan();
+        }
+
+        private void OnPoseChanged(RobotPose pose)
+        {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+            _snapshotGeneration++;
+        }
+
+        private void OnActionStarted(RobotAction action)
+        {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+            _snapshotGeneration++;
+            _postActionScanPending = true;
+        }
+
+        private void OnActionCompleted(RobotActionResult result)
+        {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+
+            ActualPathChanged?.Invoke(robot.CopyExecutedPoses());
+            if (result.BlockedByWall)
+            {
+                StopWithError("The planner requested a forward move blocked by a wall; automation stopped.");
+                return;
+            }
+            if (_postActionScanPending)
+                StartCoroutine(EnsurePostActionScan());
+        }
+
+        private IEnumerator EnsurePostActionScan()
+        {
+            yield return null;
+            if (_postActionScanPending && robot != null && lidar != null && !robot.IsActionInProgress)
+                lidar.Scan();
+        }
+
+        private void OnScanCompleted(LidarScan scan)
+        {
+            if (!_initialized || scan == null || _currentAct != DemoAct.Act1_OnlineMission)
+                return;
+
+            _observationSequence++;
+            stateMachine.StorePlannerSnapshot(_observationSequence, _progress);
+            var fingerprint = BuildObservationFingerprint();
+            if (fingerprint != _lastObservationFingerprint)
+            {
+                _lastObservationFingerprint = fingerprint;
+                _snapshotGeneration++;
+            }
+
+            if (_awaitingInformation)
+            {
+                if (fingerprint == _awaitingInformationFingerprint)
+                {
+                    SetStatus("Awaiting a scan that adds new walls or a visited cell; no action or step is issued.");
+                    return;
+                }
+                _awaitingInformation = false;
+                _awaitingInformationFingerprint = null;
+            }
+
+            if (_postActionScanPending && !robot.IsActionInProgress)
+                _postActionScanPending = false;
+            TryRequestNextAction();
+        }
+
+        private void OnRecognitionCompleted(StationRuntimeState station)
+        {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+            _snapshotGeneration++;
+            TryRequestNextAction();
+        }
+
+        private void OnDeliveryValidated(DeliveryValidationEvent result)
+        {
+            if (_currentAct != DemoAct.Act1_OnlineMission)
+                return;
+            _snapshotGeneration++;
+        }
+
+        private void TryRequestNextAction()
+        {
+            if (!_initialized || _stopped || _awaitingInformation || _requestInFlight ||
+                _postActionScanPending || robot.IsActionInProgress || stateMachine.HasPendingRecognition ||
+                !string.IsNullOrEmpty(stateMachine.ErrorMessage) || _observationSequence == 0 ||
+                _currentAct != DemoAct.Act1_OnlineMission)
+                return;
+
+            _requestInFlight = true;
+            StartCoroutine(RequestNextAction());
+        }
+
+        private IEnumerator RequestNextAction()
+        {
+            var requestGeneration = _snapshotGeneration;
+            NextActionRequestDto request = null;
+            string buildError = null;
+            try
+            {
+                request = stateMachine.BuildNextActionRequest(robot.Map.GetObservedMaskSnapshot(),
+                    robot.TotalStepCount, _observationSequence, _progress);
+            }
+            catch (Exception exception)
+            {
+                buildError = exception.Message;
+            }
+            if (request == null)
+            {
+                _requestInFlight = false;
+                StopWithError("Could not build a planner snapshot: " + buildError);
+                yield break;
+            }
+            ApiResult<NextActionResponseDto> result = null;
+            yield return plannerClient.NextAction(request, value => result = value);
+            _requestInFlight = false;
+
+            if (result == null || !result.Succeeded || result.Value == null)
+            {
+                StopWithError(result == null ? "Planner request returned no result." : result.Error);
+                yield break;
+            }
+            if (requestGeneration != _snapshotGeneration)
+            {
+                SetStatus("Discarded a late response because the local decision snapshot changed.");
+                TryRequestNextAction();
+                yield break;
+            }
+
+            string validationError;
+            if (!PlannerResponseValidator.TryValidate(request, result.Value, out validationError))
+            {
+                StopWithError("Planner response failed contract validation: " + validationError);
+                yield break;
+            }
+
+            try
+            {
+                stateMachine.ApplyNextActionResponse(result.Value);
+            }
+            catch (Exception exception)
+            {
+                StopWithError("Could not apply planner slot state: " + exception.Message);
+                yield break;
+            }
+            if (request.@event != null && !stateMachine.AcknowledgePendingEvent(request.@event))
+            {
+                StopWithError("The pending event changed while its response was in flight.");
+                yield break;
+            }
+
+            _progress = result.Value.progress;
+            stateMachine.StorePlannerSnapshot(_observationSequence, _progress);
+            _snapshotGeneration++;
+            PlannerTrajectoryPreviewChanged?.Invoke(result.Value.trajectory);
+            stateMachine.ReportPlannerStatus("Planner status: " + result.Value.status + ".");
+
+            // Notify UI of cost comparison decision whenever evaluated
+            if (result.Value.decision != null &&
+                (result.Value.decision.cost_keep.HasValue || result.Value.decision.cost_switch.HasValue))
+            {
+                DecisionEvaluated?.Invoke(result.Value.decision, robot.CurrentPose);
+            }
+
+            if (stateMachine.PendingEventCount > 0)
+            {
+                TryRequestNextAction();
+                yield break;
+            }
+
+            switch (result.Value.status)
+            {
+                case ProtocolConstants.PlannerStatuses.Planning:
+                case ProtocolConstants.PlannerStatuses.Exploring:
+                    if (_lastExecutedGeneration == requestGeneration)
+                    {
+                        StopWithError("A response attempted to execute the same snapshot action more than once.");
+                        yield break;
+                    }
+                    _lastExecutedGeneration = requestGeneration;
+                    if (!TryExecuteFirstAction(result.Value.action))
+                        StopWithError("RobotController rejected the planner action; no action was retried.");
+                    yield break;
+
+                case ProtocolConstants.PlannerStatuses.AwaitingDelivery:
+                    if (!stateMachine.ValidateCurrentDelivery())
+                    {
+                        StopWithError("Planner is awaiting delivery, but Unity could not validate a destination.");
+                        yield break;
+                    }
+                    _snapshotGeneration++;
+                    TryRequestNextAction();
+                    yield break;
+
+                case ProtocolConstants.PlannerStatuses.AwaitingObservation:
+                    _awaitingInformation = true;
+                    _awaitingInformationFingerprint = BuildObservationFingerprint();
+                    SetStatus("Planner is waiting for new sensor information; no action or step was executed.");
+                    yield break;
+
+                case ProtocolConstants.PlannerStatuses.Unreachable:
+                    _stopped = true;
+                    SetStatus("Known reachable area has no remaining task route or observation frontier.");
+                    Debug.LogWarning("Planner task stopped as unreachable after " + robot.TotalStepCount + " actions.", this);
+                    yield break;
+
+                case ProtocolConstants.PlannerStatuses.Completed:
+                    _stopped = true;
+                    SetStatus("Both state machines were verified at their correct destinations.");
+                    Debug.Log("Planner task completed after " + robot.TotalStepCount + " actions.", this);
+                    StartCoroutine(RunPostCompletionWorkflow());
+                    yield break;
+            }
+        }
+
+        private IEnumerator RunPostCompletionWorkflow()
+        {
+            PlanSummaryRequestDto request = null;
+            try
+            {
+                request = stateMachine.BuildPlanSummaryRequest(robot.Map.GetObservedMaskSnapshot());
+            }
+            catch (Exception ex)
+            {
+                SetStatus("Act 1 completed. Could not build summary request: " + ex.Message);
+                yield break;
+            }
+
+            SetStatus("Requesting Act 2 RL Plan Summary...");
+            ApiResult<PlanSummaryResponseDto> result = null;
+            yield return plannerClient.PlanSummary(request, value => result = value);
+
+            if (result == null || !result.Succeeded || result.Value == null)
+            {
+                var errorMsg = result == null ? "No response received" :
+                    (result.StatusCode == 501 ? "HTTP 501 (RL_NOT_IMPLEMENTED): Q-Learning summary not implemented yet." : result.Error);
+                SetStatus("Act 1 Complete. " + errorMsg);
+                yield break;
+            }
+
+            PlanSummaryLoaded?.Invoke(result.Value);
+            _currentAct = DemoAct.Act2_RlExploration;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Act 2: Reinforcement Learning exploration visualization running (20x)...");
+            robot.TrySetSpeedMultiplier(20f);
+
+            if (visualizer != null)
+            {
+                yield return visualizer.PlayRlTrajectories(result.Value, (k, total, steps, best) =>
+                {
+                    RlProgressUpdated?.Invoke(k, total, steps, best);
+                });
+            }
+            else
+            {
+                yield return new WaitForSeconds(1.5f);
+            }
+
+            _currentAct = DemoAct.Act3_OptimalReplay;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Act 3: Replaying optimal converged trajectory (2x)...");
+            if (visualizer != null)
+            {
+                visualizer.ShowOptimalPath(result.Value.optimal_path);
+            }
+
+            robot.TrySetSpeedMultiplier(2f);
+            yield return RunReplayWorkflow(result.Value);
+
+            if (_lastReplayFailed)
+                yield break;
+
+            _currentAct = DemoAct.Completed;
+            ActChanged?.Invoke(_currentAct);
+            SetStatus("Three-act demonstration completed successfully!");
+        }
+
+        public IEnumerator RunReplayWorkflow(PlanSummaryResponseDto summary)
+        {
+            _lastReplayFailed = false;
+            if (summary == null || summary.optimal_actions == null || summary.optimal_actions.Count == 0 || robot == null)
+            {
+                _lastReplayFailed = true;
+                Debug.LogError("[Replay Failed] Summary is null, optimal_actions is empty, or robot is null.");
+                SetStatus("复盘失败: 摘要缺少有效最优动作或机器人未就绪");
+                yield break;
+            }
+
+            var actions = summary.optimal_actions;
+
+            // Determine actual start_pose: extract from optimal record if present, else use stateMachine.InitialPose
+            EpisodeRecordDto optimalRecord = null;
+            if (summary.episode_records != null && summary.episode_records.Count > 0)
+            {
+                for (var r = 0; r < summary.episode_records.Count; r++)
+                {
+                    if (summary.episode_records[r].episode == summary.optimal_episode)
+                    {
+                        optimalRecord = summary.episode_records[r];
+                        break;
+                    }
+                }
+            }
+
+            var isLive = plannerClient != null && plannerClient.Mode == PlannerClientMode.Live;
+
+            if (optimalRecord == null)
+            {
+                if (isLive)
+                {
+                    _lastReplayFailed = true;
+                    Debug.LogError("[Replay Failed] Could not find episode matching optimal_episode (" + summary.optimal_episode + ") in episode_records.");
+                    SetStatus("复盘失败: 缺失 optimal_episode=" + summary.optimal_episode + " 的详细回合记录");
+                    yield break;
+                }
+                else
+                {
+                    Debug.Log("[Replay Mock] sample_summary.json lacks episode_records for optimal_episode=" + summary.optimal_episode + "; fallback to initial pose and replay actions directly.");
+                }
+            }
+
+            // Live mode: strictly require valid trajectory and poses.Count == actions.Count + 1
+            if (isLive)
+            {
+                var posesCount = (optimalRecord != null && optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null)
+                    ? optimalRecord.trajectory.poses.Count
+                    : 0;
+                var expectedCount = actions.Count + 1;
+                if (posesCount != expectedCount)
+                {
+                    _lastReplayFailed = true;
+                    Debug.LogError("[Replay Failed] Live mode trajectory poses count mismatch: expected " + expectedCount + " (actions.Count + 1), but got " + posesCount);
+                    SetStatus("复盘失败: 轨迹位姿数量(" + posesCount + ")与动作序列期望(" + expectedCount + ")不匹配");
+                    yield break;
+                }
+            }
+
+            var startPose = stateMachine != null ? stateMachine.InitialPose : new RobotPose(new Vector2Int(0, 0), RobotHeading.North);
+            List<PoseDto> expectedPoses = null;
+            var switchSteps = new HashSet<int>();
+
+            if (optimalRecord != null)
+            {
+                if (optimalRecord.switch_steps != null)
+                {
+                    for (var s = 0; s < optimalRecord.switch_steps.Count; s++)
+                        switchSteps.Add(optimalRecord.switch_steps[s]);
+                }
+
+                if (optimalRecord.trajectory != null && optimalRecord.trajectory.poses != null && optimalRecord.trajectory.poses.Count > 0)
+                {
+                    expectedPoses = optimalRecord.trajectory.poses;
+                    var firstPose = expectedPoses[0];
+                    startPose = new RobotPose(new Vector2Int(firstPose.x, firstPose.z), RobotPose.HeadingFromDegrees(firstPose.theta));
+                }
+            }
+            else if (summary.switch_steps != null)
+            {
+                for (var s = 0; s < summary.switch_steps.Count; s++)
+                    switchSteps.Add(summary.switch_steps[s]);
+            }
+
+            stateMachine.IsReplayMode = true;
+            robot.EnterReplayMode(startPose);
+            if (stateMachine != null)
+            {
+                stateMachine.BeginReplayStationVisuals();
+                stateMachine.StepReplayStationVisuals(startPose.Cell, false, 0, startPose);
+            }
+            yield return new WaitForSeconds(0.4f);
+
+            for (var i = 0; i < actions.Count; i++)
+            {
+                var action = actions[i];
+                var stepNumber = i + 1;
+                var isSwitchBeforeAction = switchSteps.Contains(stepNumber);
+
+                if (isSwitchBeforeAction)
+                {
+                    if (stateMachine != null)
+                    {
+                        stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, true, stepNumber, robot.CurrentPose);
+                    }
+                    SetStatus("第三幕复盘: 第 " + stepNumber + " 步执行前触发原地换人...");
+                    yield return new WaitForSeconds(0.15f);
+                }
+                else
+                {
+                    SetStatus("Act 3 复盘: 动作 #" + stepNumber + " [" + action + "]...");
+                }
+
+                if (!TryExecuteFirstAction(action))
+                {
+                    Debug.LogError("[Replay Blocked/Failed] Step " + i + ": action '" + action + "' blocked by wall or failed at pose " + robot.CurrentPose);
+                    SetStatus("复盘失败: 第 " + stepNumber + " 步动作 '" + action + "' 遇阻碰墙!");
+                    _lastReplayFailed = true;
+                    break;
+                }
+
+                while (robot.IsActionInProgress)
+                    yield return null;
+
+                // Pose verification against expected trajectory
+                if (expectedPoses != null && (i + 1) < expectedPoses.Count)
+                {
+                    var exp = expectedPoses[i + 1];
+                    var cur = robot.CurrentPose;
+                    if (cur.Cell.x != exp.x || cur.Cell.y != exp.z || cur.HeadingDegrees != exp.theta)
+                    {
+                        Debug.LogError("[Replay Pose Mismatch] Step " + stepNumber + ": expected (" + exp.x + ", " + exp.z + ", " + exp.theta + "°), got (" + cur.Cell.x + ", " + cur.Cell.y + ", " + cur.HeadingDegrees + "°)");
+                        SetStatus("复盘位姿校验失败: 步骤 " + stepNumber + " 实际位姿 (" + cur.Cell.x + "," + cur.Cell.y + "," + cur.HeadingDegrees + "°) 与预期 (" + exp.x + "," + exp.z + "," + exp.theta + "°) 不符！");
+                        _lastReplayFailed = true;
+                        break;
+                    }
+                }
+
+                // Step station visuals at new pose (empty-handed pickup or destination delivery)
+                if (stateMachine != null)
+                {
+                    stateMachine.StepReplayStationVisuals(robot.CurrentPose.Cell, false, stepNumber, robot.CurrentPose);
+                }
+            }
+
+            string deliveryFailReason = null;
+            if (!_lastReplayFailed)
+            {
+                // Strict Delivery Verification
+                if (stateMachine != null)
+                {
+                    if (!stateMachine.ValidateAllStationsDelivered(out deliveryFailReason))
+                    {
+                        _lastReplayFailed = true;
+                        Debug.LogError("[Act3 Replay Audit] ❌ Strict delivery verification FAILED: " + deliveryFailReason);
+                        SetStatus("复盘失败: 交付校验未通过 - " + deliveryFailReason);
+                    }
+                    else
+                    {
+                        Debug.Log("[Act3 Replay Audit] ✅ Strict delivery verification PASSED: Both characters delivered successfully.");
+                        SetStatus("Act 3: Optimal trajectory replay completed successfully!");
+                        yield return new WaitForSeconds(0.5f);
+                    }
+                }
+                else
+                {
+                    SetStatus("Act 3: Optimal trajectory replay completed successfully!");
+                    yield return new WaitForSeconds(0.5f);
+                }
+            }
+
+            SaveReplayAuditReport(summary, !_lastReplayFailed, deliveryFailReason);
+
+            if (stateMachine != null)
+            {
+                stateMachine.EndReplayStationVisuals(!_lastReplayFailed);
+            }
+
+            robot.ExitReplayMode();
+            stateMachine.IsReplayMode = false;
+        }
+
+        public Coroutine StartReplay(PlanSummaryResponseDto summary)
+        {
+            return StartCoroutine(RunReplayWorkflow(summary));
+        }
+
+        private void SaveReplayAuditReport(PlanSummaryResponseDto summary, bool passed, string failureReason)
+        {
+            try
+            {
+                var configuredSwitches = new List<int>();
+                if (summary != null)
+                {
+                    if (summary.switch_steps != null)
+                        configuredSwitches.AddRange(summary.switch_steps);
+                    else if (summary.episode_records != null)
+                    {
+                        for (var i = 0; i < summary.episode_records.Count; i++)
+                        {
+                            if (summary.episode_records[i].episode == summary.optimal_episode && summary.episode_records[i].switch_steps != null)
+                            {
+                                configuredSwitches.AddRange(summary.episode_records[i].switch_steps);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                var report = new ReplayAuditReportDto
+                {
+                    report_time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    mode = (plannerClient != null && plannerClient.Mode == PlannerClientMode.Live) ? "Live" : "Mock",
+                    total_actions = summary != null && summary.optimal_actions != null ? summary.optimal_actions.Count : 0,
+                    switch_steps_configured = configuredSwitches,
+                    all_delivered = passed,
+                    passed = passed,
+                    failure_reason = failureReason,
+                    events = stateMachine != null ? stateMachine.ReplayAuditEvents : new List<ReplayAuditEventDto>()
+                };
+
+                var json = JsonConvert.SerializeObject(report, Formatting.Indented);
+
+                var mockPath = Path.Combine(Application.streamingAssetsPath, "Mock", "latest_replay_audit.json");
+                try
+                {
+                    File.WriteAllText(mockPath, json, Encoding.UTF8);
+                    Debug.Log("[Act3 Replay Audit] Audit report written to: " + mockPath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Act3 Replay Audit] Could not write to StreamingAssets: " + ex.Message);
+                }
+
+                var persistentPath = Path.Combine(Application.persistentDataPath, "latest_replay_audit.json");
+                try
+                {
+                    File.WriteAllText(persistentPath, json, Encoding.UTF8);
+                    Debug.Log("[Act3 Replay Audit] Audit report written to persistentDataPath: " + persistentPath);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Act3 Replay Audit] Could not write to persistentDataPath: " + ex.Message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[Act3 Replay Audit] Failed to generate/save audit report: " + ex.Message);
+            }
+        }
+
+        private bool TryExecuteFirstAction(string action)
+        {
+            switch (action)
+            {
+                case ProtocolConstants.Actions.Forward: return robot.TryExecuteAction(RobotAction.Forward);
+                case ProtocolConstants.Actions.TurnLeft: return robot.TryExecuteAction(RobotAction.TurnLeft);
+                case ProtocolConstants.Actions.TurnRight: return robot.TryExecuteAction(RobotAction.TurnRight);
+                default: return false;
+            }
+        }
+
+        public void RetryAfterError()
+        {
+            _stopped = false;
+            stateMachine.RetryErrorState();
+            _snapshotGeneration++;
+            TryRequestNextAction();
+        }
+
+        public void ResumeAfterSensorRecovery()
+        {
+            _stopped = false;
+            _awaitingInformation = false;
+            _awaitingInformationFingerprint = null;
+            _snapshotGeneration++;
+            stateMachine.ClearPlannerError();
+            lidar.Scan();
+            TryRequestNextAction();
+        }
+
+        private string BuildObservationFingerprint()
+        {
+            var snapshot = robot.Map.GetObservedMaskSnapshot();
+            var visited = robot.Map.CopyVisitedCells();
+            var builder = new StringBuilder(snapshot.Width * snapshot.Height * 4 + visited.Length * 8);
+            var seen = snapshot.CopySeenWalls();
+            var known = snapshot.CopyKnownWalls();
+            for (var i = 0; i < seen.Length; i++)
+                builder.Append(seen[i].ToString("X1")).Append(known[i].ToString("X1"));
+            builder.Append('|');
+            for (var i = 0; i < visited.Length; i++)
+                builder.Append(visited[i].x).Append(',').Append(visited[i].y).Append(';');
+            return builder.ToString();
+        }
+
+        private void StopWithError(string message)
+        {
+            _stopped = true;
+            SetStatus(message);
+            Debug.LogError("Planner automation stopped: " + message, this);
+            if (stateMachine != null)
+                stateMachine.ReportPlannerError(message);
+        }
+
+        private void SetStatus(string message)
+        {
+            StatusChanged?.Invoke(message);
+            if (stateMachine != null)
+                stateMachine.ReportPlannerStatus(message);
+        }
+    }
+}

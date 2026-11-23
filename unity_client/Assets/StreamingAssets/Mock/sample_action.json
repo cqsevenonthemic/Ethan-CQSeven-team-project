@@ -1,0 +1,17 @@
+{
+  "action": "forward",
+  "carry_slot": null,
+  "slots": {},
+  "plan_path": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      1
+    ]
+  ],
+  "decision": null,
+  "done": false
+}
