@@ -13,6 +13,7 @@ unity_client/.vs/
 __pycache__/
 *.py[cod]
 .venv/
+.venv-vision/
 venv/
 env/
 .pytest_cache/

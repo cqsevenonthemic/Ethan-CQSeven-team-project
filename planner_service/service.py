@@ -5,6 +5,7 @@ from planner_service.planner.grid import as_state
 from planner_service.planner.oriented_astar import Path, shortest_path
 from planner_service.planner.progress import SCAN_LIMIT, update_progress
 from planner_service.planner.task_dijkstra import ordered_cost
+from planner_service.planner.task_frontier import ExplorationStrategy, task_frontier
 from planner_service.schemas import (
     ActiveResponse, Decision, DESTINATIONS, ObserveRequest, Pose, RejectedEvent,
     TerminalResponse, Trajectory,
@@ -18,7 +19,9 @@ class FeatureUnavailable(Exception):
         self.message = message
 
 
-def decide(request: ObserveRequest) -> ActiveResponse | TerminalResponse:
+def decide(
+    request: ObserveRequest, *, exploration: ExplorationStrategy = ExplorationStrategy.BASELINE
+) -> ActiveResponse | TerminalResponse:
     # Copy the snapshot: repeated identical requests produce identical decisions.
     slots = {key: slot.model_copy(deep=True) for key, slot in request.slots.items()}
     carry = request.carry_slot
@@ -79,6 +82,7 @@ def decide(request: ObserveRequest) -> ActiveResponse | TerminalResponse:
             decision.reason = "Keep current load: no proven strict switch improvement on the confirmed map"
 
     path = None
+    goal = None
     if carry:
         goal = DESTINATIONS[slots[carry].pred_role]
         if start[:2] == goal:
@@ -99,6 +103,15 @@ def decide(request: ObserveRequest) -> ActiveResponse | TerminalResponse:
         return response(path, "planning", "Shortest unit-cost route on confirmed open edges")
     if request.visited_cells is None:
         return response(Path([start], []), "awaiting_observation", "Search requires caller-owned visited_cells; wall visibility is not search coverage")
+    if (goal is not None and progress.scan_attempts < SCAN_LIMIT
+            and (request.progress is not None or request.step_count == 0)
+            and (exploration == ExplorationStrategy.CARRIED_TASK
+                 or (exploration == ExplorationStrategy.KNOWN_TASKS and len(slots) == 2))):
+        directed = task_frontier(request, start, goal)
+        if directed:
+            progress.pending_scan = directed.states[-1][:2] == start[:2]
+            return response(directed, "exploring",
+                            "Observe an unknown edge on a low-cost possible route to the current destination")
     coverage = cover_unvisited(request, start, set(request.visited_cells))
     if coverage:
         return response(coverage, "exploring", "Enter a reachable cell not yet physically searched")

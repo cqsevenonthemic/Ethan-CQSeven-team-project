@@ -171,6 +171,15 @@ class RecognizeRequest(Model):
         return self
 
 
+class RecognizeResponse(Model):
+    pred_role: Role
+    confidence: Annotated[float, Field(ge=0, le=1)]
+    recognition_id: str
+    recognition_source: Literal["onnx"]
+    image_sha256: str
+    status: Literal["recognized", "low_confidence"]
+
+
 class InitialTargets(Model):
     quyuan: Point
     zhaojun: Point
@@ -193,6 +202,42 @@ class Trajectory(Model):
     poses: list[Pose]
     actions: list[Action]
     steps: int
+
+
+class EpisodeRecord(Model):
+    episode: int
+    behavior: Literal["astar_demonstration", "astar_guided", "epsilon_greedy"]
+    epsilon: float
+    reward: int
+    completed: bool
+    failure: Literal["action_budget_exceeded"] | None = None
+    turns: int
+    switch_steps: list[int]
+    trajectory: Trajectory
+
+
+class OptimalSteps(Model):
+    total: int
+    forward: int
+    turn: int
+
+
+SummaryPath = list[tuple[Coordinate, Coordinate]]
+
+
+class SummaryResponse(Model):
+    explored_trajectories: Annotated[list[SummaryPath], Field(min_length=30, max_length=50)]
+    episode_steps: list[int]
+    optimal_path: SummaryPath
+    optimal_actions: list[Action]
+    optimal_steps: OptimalSteps
+    episode_records: list[EpisodeRecord]
+    optimal_episode: int
+    training_seed: int
+    training_episodes: int
+    exact_steps: int
+    map_scope: Literal["complete_map", "confirmed_subgraph"]
+    optimality_proven: bool
 
 
 class ActiveResponse(Model):
