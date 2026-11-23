@@ -110,11 +110,11 @@ namespace Ethan.CQSeven.RobotSim
                     switchStep5Found = true;
                 if (evt.event_type == "pickup" && evt.step_index == 1)
                     pickupS1Found = true;
-                if (evt.event_type == "deliver" && evt.step_index == 42)
+                if (evt.event_type == "deliver" && evt.step_index == 65)
                     deliverS1Found = true;
-                if (evt.event_type == "pickup" && evt.step_index == 81)
+                if (evt.event_type == "pickup" && evt.step_index == 127)
                     pickupS2Found = true;
-                if (evt.event_type == "deliver" && evt.step_index == 125)
+                if (evt.event_type == "deliver" && evt.step_index == 188)
                     deliverS2Found = true;
             }
 
@@ -123,12 +123,12 @@ namespace Ethan.CQSeven.RobotSim
 
             Debug.Log("[ReplayRegressionTest] --------------------------------------------------");
             Debug.Log("[ReplayRegressionTest] VERIFICATION RESULTS:");
-            Debug.Log("[ReplayRegressionTest] 1. Initial Pickup s1 (Step 1): " + (pickupS1Found ? "PASS" : "FAIL"));
-            Debug.Log("[ReplayRegressionTest] 2. Switch before Step 4 (s1 -> s2): " + (switchStep4Found ? "PASS" : "FAIL"));
-            Debug.Log("[ReplayRegressionTest] 3. Switch before Step 5 (s2 -> s1): " + (switchStep5Found ? "PASS" : "FAIL"));
-            Debug.Log("[ReplayRegressionTest] 4. Deliver s1 to (8,8) (Step 42): " + (deliverS1Found ? "PASS" : "FAIL"));
-            Debug.Log("[ReplayRegressionTest] 5. Pickup s2 at (2,0) (Step 81): " + (pickupS2Found ? "PASS" : "FAIL"));
-            Debug.Log("[ReplayRegressionTest] 6. Deliver s2 to (7,7) (Step 125): " + (deliverS2Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 1. Initial Pickup s1 at (0,1) (Step 1): " + (pickupS1Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 2. Switch before Step 4 at (0,2) (s1 -> s2): " + (switchStep4Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 3. Switch before Step 5 at (0,2) (s2 -> s1): " + (switchStep5Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 4. Deliver s1 to (8,8) (Step 65): " + (deliverS1Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 5. Pickup s2 at (0,2) (Step 127): " + (pickupS2Found ? "PASS" : "FAIL"));
+            Debug.Log("[ReplayRegressionTest] 6. Deliver s2 to (7,7) (Step 188): " + (deliverS2Found ? "PASS" : "FAIL"));
             Debug.Log("[ReplayRegressionTest] 7. Strict Final Dual-Delivery Check: " + (allDelivered ? "PASS" : "FAIL: " + failReason));
             Debug.Log("[ReplayRegressionTest] --------------------------------------------------");
 

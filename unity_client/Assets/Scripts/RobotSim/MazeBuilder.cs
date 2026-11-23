@@ -18,6 +18,7 @@ namespace Ethan.CQSeven.RobotSim
         private readonly byte[,] _seenWalls = new byte[MazeLayout.Height, MazeLayout.Width];
         private readonly byte[,] _knownWalls = new byte[MazeLayout.Height, MazeLayout.Width];
         private readonly bool[,] _visited = new bool[MazeLayout.Height, MazeLayout.Width];
+        private readonly bool[,] _reachableFromStart = new bool[MazeLayout.Height, MazeLayout.Width];
         private Renderer[,] _cellRenderers;
         private Transform _geometryRoot;
         private Material _wallMaterial;
@@ -177,6 +178,11 @@ namespace Ethan.CQSeven.RobotSim
             return IsInBounds(cell) && _visited[cell.y, cell.x];
         }
 
+        public bool IsReachableFromStart(Vector2Int cell)
+        {
+            return IsInBounds(cell) && _reachableFromStart[cell.y, cell.x];
+        }
+
         /// <summary>Returns cells the robot actually entered, sorted by x then z for stable API snapshots.</summary>
         public Vector2Int[] CopyVisitedCells()
         {
@@ -330,15 +336,12 @@ namespace Ethan.CQSeven.RobotSim
 
         private bool ValidateFixedLayout()
         {
-            var reachable = new bool[Height, Width];
-            var queue = new Queue<Vector2Int>();
-            queue.Enqueue(MazeLayout.StartCell);
-            reachable[0, 0] = true;
-            var count = 0;
-            while (queue.Count > 0)
+            // Verify boundary closure and symmetric shared walls across all 256 cells
+            // (competition mazes such as 2022 Tohoku Freshman contain sealed filler cells).
+            for (var z = 0; z < Height; z++)
+            for (var x = 0; x < Width; x++)
             {
-                var cell = queue.Dequeue();
-                count++;
+                var cell = new Vector2Int(x, z);
                 byte mask;
                 TryGetActualWalls(cell, out mask);
                 for (var bit = WallDirection.North; bit <= WallDirection.West; bit <<= 1)
@@ -359,14 +362,43 @@ namespace Ethan.CQSeven.RobotSim
                     var neighborWall = WallDirection.Opposite(bit);
                     if (((mask & bit) != 0) != ((neighborMask & neighborWall) != 0))
                         return false;
-                    if ((mask & bit) == 0 && !reachable[neighbor.y, neighbor.x])
+                }
+            }
+
+            System.Array.Clear(_reachableFromStart, 0, _reachableFromStart.Length);
+            var queue = new Queue<Vector2Int>();
+            var start = MazeLayout.StartCell;
+            queue.Enqueue(start);
+            _reachableFromStart[start.y, start.x] = true;
+
+            while (queue.Count > 0)
+            {
+                var cell = queue.Dequeue();
+                byte mask;
+                TryGetActualWalls(cell, out mask);
+                for (var bit = WallDirection.North; bit <= WallDirection.West; bit <<= 1)
+                {
+                    if ((mask & bit) != 0)
+                        continue;
+                    int dx;
+                    int dz;
+                    WallDirection.TryGetOffset(bit, out dx, out dz);
+                    var neighbor = new Vector2Int(cell.x + dx, cell.y + dz);
+                    if (IsInBounds(neighbor) && !_reachableFromStart[neighbor.y, neighbor.x])
                     {
-                        reachable[neighbor.y, neighbor.x] = true;
+                        _reachableFromStart[neighbor.y, neighbor.x] = true;
                         queue.Enqueue(neighbor);
                     }
                 }
             }
-            return count == Width * Height;
+
+            for (var i = 0; i < MazeLayout.DestinationCount; i++)
+            {
+                var dest = MazeLayout.GetDestination(i);
+                if (!IsReachableFromStart(dest))
+                    return false;
+            }
+            return true;
         }
     }
 }

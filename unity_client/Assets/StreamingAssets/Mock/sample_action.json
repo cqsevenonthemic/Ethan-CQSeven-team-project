@@ -1,5 +1,5 @@
 {
-  "action": "turn_right",
+  "action": "forward",
   "carry_slot": null,
   "slots": {},
   "plan_path": [
@@ -8,8 +8,8 @@
       0
     ],
     [
-      1,
-      0
+      0,
+      1
     ]
   ],
   "decision": null,

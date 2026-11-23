@@ -2,14 +2,14 @@
   "_template_only": false,
   "_fixture_only": true,
   "s1": {
-    "x": 1,
-    "z": 0,
+    "x": 0,
+    "z": 1,
     "role": "quyuan",
     "image_path": "Mock/Images/quyuan.png"
   },
   "s2": {
-    "x": 2,
-    "z": 0,
+    "x": 0,
+    "z": 2,
     "role": "zhaojun",
     "image_path": "Mock/Images/zhaojun.png"
   }

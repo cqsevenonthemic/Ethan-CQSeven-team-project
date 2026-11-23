@@ -409,9 +409,13 @@ namespace Ethan.CQSeven.RobotSim
         {
             if (!station.x.HasValue || !station.z.HasValue)
                 throw new JsonSerializationException(slotId + " needs integer x and z coordinates.");
-            if (!robot.Map.IsInBounds(new Vector2Int(station.x.Value, station.z.Value)))
+            var cell = new Vector2Int(station.x.Value, station.z.Value);
+            if (!robot.Map.IsInBounds(cell))
                 throw new JsonSerializationException(slotId + " coordinates are outside the " +
                     robot.Map.Width + "x" + robot.Map.Height + " maze.");
+            if (!robot.Map.IsReachableFromStart(cell))
+                throw new JsonSerializationException(slotId + " coordinates (" + cell.x + "," + cell.y +
+                    ") are inside a sealed unreachable block of the 16x16 maze. Please choose a cell reachable from (0,0).");
             if (station.role != ProtocolConstants.Roles.QuYuan && station.role != ProtocolConstants.Roles.ZhaoJun)
                 throw new JsonSerializationException(slotId + " role must be exactly quyuan or zhaojun.");
             if (recognitionCamera == null && string.IsNullOrWhiteSpace(station.image_path))

@@ -27,6 +27,7 @@ namespace Ethan.CQSeven.RobotSim
         private int _failed;
 
         private bool _isLiveE2E;
+        private bool _isMockE2E;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoRegisterIfCommandLineRequested()
@@ -35,11 +36,13 @@ namespace Ethan.CQSeven.RobotSim
             {
                 var isUnit = string.Equals(arg, "-runDeliveryTest", StringComparison.OrdinalIgnoreCase);
                 var isLive = string.Equals(arg, "-runLiveTest", StringComparison.OrdinalIgnoreCase);
-                if (isUnit || isLive)
+                var isMock = string.Equals(arg, "-runMockTest", StringComparison.OrdinalIgnoreCase);
+                if (isUnit || isLive || isMock)
                 {
                     var go = new GameObject("DeliveryValidationTestRunner");
                     var runner = go.AddComponent<DeliveryValidationTestRunner>();
                     runner._isLiveE2E = isLive;
+                    runner._isMockE2E = isMock;
                     DontDestroyOnLoad(go);
                     return;
                 }
@@ -48,9 +51,9 @@ namespace Ethan.CQSeven.RobotSim
 
         private IEnumerator Start()
         {
-            if (_isLiveE2E)
+            if (_isLiveE2E || _isMockE2E)
             {
-                yield return RunLiveEndToEndTest();
+                yield return RunLiveEndToEndTest(_isLiveE2E);
                 yield break;
             }
             Debug.Log("[DeliveryTest] ==================================================");
@@ -144,11 +147,12 @@ namespace Ethan.CQSeven.RobotSim
             Quit(_failed == 0 ? 0 : 1);
         }
 
-        private IEnumerator RunLiveEndToEndTest()
+        private IEnumerator RunLiveEndToEndTest(bool expectLive)
         {
-            Debug.Log("[LiveE2E] ==================================================");
-            Debug.Log("[LiveE2E] STARTING FULL 3-ACT LIVE API END-TO-END TEST");
-            Debug.Log("[LiveE2E] ==================================================");
+            var tag = expectLive ? "[LiveE2E]" : "[MockE2E]";
+            Debug.Log(tag + " ==================================================");
+            Debug.Log(tag + (expectLive ? " STARTING FULL 3-ACT LIVE API END-TO-END TEST" : " STARTING FULL 3-ACT MOCK END-TO-END TEST"));
+            Debug.Log(tag + " ==================================================");
             Time.timeScale = 10f;
 
             PlannerTaskDriver driver = null;
@@ -163,22 +167,23 @@ namespace Ethan.CQSeven.RobotSim
             {
                 if (_sm != null && !string.IsNullOrEmpty(_sm.ErrorMessage))
                 {
-                    Debug.LogError("[LiveE2E] StateMachineTrigger init error: " + _sm.ErrorMessage);
+                    Debug.LogError(tag + " StateMachineTrigger init error: " + _sm.ErrorMessage);
                     Quit(1);
                     yield break;
                 }
                 if (Time.realtimeSinceStartup > timeout)
                 {
-                    Debug.LogError("[LiveE2E] Timed out waiting for scene initialization.");
+                    Debug.LogError(tag + " Timed out waiting for scene initialization.");
                     Quit(1);
                     yield break;
                 }
                 yield return null;
             }
 
-            if (client.Mode != PlannerClientMode.Live)
+            var expectedMode = expectLive ? PlannerClientMode.Live : PlannerClientMode.Mock;
+            if (client.Mode != expectedMode)
             {
-                Debug.LogError("[LiveE2E] Expected LIVE API mode, but got " + client.Mode);
+                Debug.LogError(tag + " Expected " + expectedMode + " mode, but got " + client.Mode);
                 Quit(1);
                 yield break;
             }
@@ -187,22 +192,22 @@ namespace Ethan.CQSeven.RobotSim
             var deliveries = 0;
             var switches = 0;
             _sm.RecognitionCompleted += s =>
-                Debug.Log(string.Format("[LiveE2E] Recognized {0} at ({1},{2}) -> pred_role={3} ({4:P1}) [step={5}]",
-                    s.SlotId, s.RecognitionCell.x, s.RecognitionCell.y, s.PredictedRole, s.Confidence, robot.TotalStepCount));
+                Debug.Log(string.Format("{0} Recognized {1} at ({2},{3}) -> pred_role={4} ({5:P1}) [step={6}]",
+                    tag, s.SlotId, s.RecognitionCell.x, s.RecognitionCell.y, s.PredictedRole, s.Confidence, robot.TotalStepCount));
             _sm.SlotSwitched += sw =>
             {
                 switches++;
-                Debug.Log(string.Format("[LiveE2E] Switched carry {0} -> {1} at ({2},{3}) [step={4}]",
-                    sw.PreviousCarrySlot, sw.NewCarrySlot, sw.Cell.x, sw.Cell.y, robot.TotalStepCount));
+                Debug.Log(string.Format("{0} Switched carry {1} -> {2} at ({3},{4}) [step={5}]",
+                    tag, sw.PreviousCarrySlot, sw.NewCarrySlot, sw.Cell.x, sw.Cell.y, robot.TotalStepCount));
             };
             _sm.DeliveryValidated += d =>
             {
                 if (d.Accepted) deliveries++; else rejections++;
-                Debug.Log(string.Format("[LiveE2E] DeliveryValidated slot={0} cell=({1},{2}) accepted={3} [step={4}] msg={5}",
-                    d.SlotId, d.Cell.x, d.Cell.y, d.Accepted, robot.TotalStepCount, d.Message ?? "accepted"));
+                Debug.Log(string.Format("{0} DeliveryValidated slot={1} cell=({2},{3}) accepted={4} [step={5}] msg={6}",
+                    tag, d.SlotId, d.Cell.x, d.Cell.y, d.Accepted, robot.TotalStepCount, d.Message ?? "accepted"));
             };
             driver.ActChanged += act =>
-                Debug.Log(string.Format("[LiveE2E] ActChanged -> {0} (Act1 steps={1})", act, robot.TotalStepCount));
+                Debug.Log(string.Format("{0} ActChanged -> {1} (Act1 steps={2})", tag, act, robot.TotalStepCount));
 
             var runDeadline = Time.realtimeSinceStartup + 180f;
             while (driver.CurrentAct != DemoAct.Completed)
@@ -210,7 +215,7 @@ namespace Ethan.CQSeven.RobotSim
                 robot.TrySetSpeedMultiplier(200f);
                 if (!string.IsNullOrEmpty(_sm.ErrorMessage))
                 {
-                    Debug.LogError("[LiveE2E] FAIL: StateMachine error at step " + robot.TotalStepCount + ": " + _sm.ErrorMessage);
+                    Debug.LogError(tag + " FAIL: StateMachine error at step " + robot.TotalStepCount + ": " + _sm.ErrorMessage);
                     Quit(1);
                     yield break;
                 }
@@ -220,14 +225,14 @@ namespace Ethan.CQSeven.RobotSim
                     yield return new WaitForSecondsRealtime(0.2f);
                     if (driver.CurrentAct == DemoAct.Act1_OnlineMission && !string.IsNullOrEmpty(_sm.ErrorMessage))
                     {
-                        Debug.LogError("[LiveE2E] FAIL: Driver stopped in Act 1: " + _sm.StatusMessage);
+                        Debug.LogError(tag + " FAIL: Driver stopped in Act 1: " + _sm.StatusMessage);
                         Quit(1);
                         yield break;
                     }
                 }
                 if (Time.realtimeSinceStartup > runDeadline)
                 {
-                    Debug.LogError("[LiveE2E] FAIL: Timed out at act=" + driver.CurrentAct + " step=" + robot.TotalStepCount);
+                    Debug.LogError(tag + " FAIL: Timed out at act=" + driver.CurrentAct + " step=" + robot.TotalStepCount);
                     Quit(1);
                     yield break;
                 }
@@ -236,18 +241,18 @@ namespace Ethan.CQSeven.RobotSim
 
             var act3Valid = _sm.ValidateAllStationsDelivered(out var act3FailReason);
             Debug.Log(string.Format(
-                "[LiveE2E] SUMMARY: Act1Steps={0} (Forward={1}, Left={2}, Right={3}) | Deliveries={4} | Rejections={5} | Switches={6} | Act3Steps={7} | Act3Valid={8}",
-                robot.TotalStepCount, robot.ForwardStepCount, robot.LeftTurnStepCount, robot.RightTurnStepCount,
+                "{0} SUMMARY: Act1Steps={1} (Forward={2}, Left={3}, Right={4}) | Deliveries={5} | Rejections={6} | Switches={7} | Act3Steps={8} | Act3Valid={9}",
+                tag, robot.TotalStepCount, robot.ForwardStepCount, robot.LeftTurnStepCount, robot.RightTurnStepCount,
                 deliveries, rejections, switches, robot.ReplayStepCount, act3Valid));
 
             if (!act3Valid || deliveries != 2)
             {
-                Debug.LogError("[LiveE2E] FAIL: " + (act3FailReason ?? ("deliveries=" + deliveries)));
+                Debug.LogError(tag + " FAIL: " + (act3FailReason ?? ("deliveries=" + deliveries)));
                 Quit(1);
                 yield break;
             }
 
-            Debug.Log("[LiveE2E] PASS: All 3 Acts completed in LIVE API mode!");
+            Debug.Log(tag + " PASS: All 3 Acts completed in " + expectedMode + " mode!");
             Quit(0);
         }
 
