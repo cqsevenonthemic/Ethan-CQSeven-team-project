@@ -62,26 +62,26 @@ namespace Ethan.CQSeven.RobotSim
             return string.Empty;
         }
 
-        // Official 2022 Tohoku Regional Classic Micromouse Freshman Maze (PPT Slide 1).
+        // Official 2022 Tohoku Regional Classic Micromouse Freshman Maze (PPT Slide 1) with all 13 dashed passages opened.
         // Literal four-bit wall masks (N=1, E=2, S=4, W=8), ordered south-to-north (y=0..15), west-to-east (x=0..15).
-        // Checksum verified: West route 45 steps / 16 turns; South route 49 steps / 12 turns (156 reachable cells).
+        // Symmetry & outer-boundary verified: 215 reachable cells from (0,0).
         private const string FixedWallMaskRows =
-            "EC6C545545545556" +
-            "A93AEBC6AC6AC46A" +
+            "EC44545445545556" +
+            "A93AEBC2AC6AC46A" +
             "85528412A93A802A" +
-            "AC6A93EA856A913A" +
-            "B828552AAEA95452" +
+            "AC6A93EA8568113A" +
+            "B8005502AEA95452" +
             "C02AC6ABABAD7AEA" +
-            "913A92853C1553AA" +
-            "C4517BAC6AD5553A" +
+            "912A92852C1553AA" +
+            "C4117BAC2AD5553A" +
             "AAD7C53839554453" +
-            "91552C515556AAC6" +
-            "D557AAC4446AAA93" +
-            "C5553A91102A9156" +
-            "AD457954682AD57A" +
-            "87AC5552A9385453" +
-            "AD3AC46A9553FAC6" +
-            "9553913955555393";
+            "91452C515556AAC6" +
+            "D516AAC4446AAA93" +
+            "C5513A90102A9156" +
+            "AD457950682AD57A" +
+            "87AC5542A9105453" +
+            "AD3AC42A9553FAC6" +
+            "9551113955555393";
 
         private static readonly byte[] WallMasks = ParseFixedWallMasks();
 
